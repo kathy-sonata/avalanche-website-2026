@@ -1,0 +1,61 @@
+window.addEventListener('load', () => {
+    console.log('Loading web-service-app-zone.js');
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+
+    let isPreProd = false;
+    let front_end_service   = (document.location.href.match(/localhost\:/))? "http://localhost:8090" : "https://us-central1-sonata-innovations-461822.cloudfunctions.net/sonata-messaging-frontend-web-interaction-service" 
+    
+    const request_page_identification = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            console.log('Calling the zone service to start page identification events',event_data, mesh_app['custom-data']);
+
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/zone','get',null,{"url": ("url" in event_data.data)? event_data.data.url : null},{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( zone_data =>{
+                console.log('zone_data',zone_data,"zone-service", mesh_app['custom-data']);
+                if( 'session-data' in zone_data){
+                    announce_session_update(zone_data['session-data'],zone_data['session-v']);
+                }
+                resolve(zone_data)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+
+    }
+
+    const resolve_custom_data = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            mesh_app['custom-data']['tenant_id'] = ('tenant_id' in event_data['data'])?event_data['data']['tenant_id']:('tenant_id' in mesh_app['custom-data'])? mesh_app['custom-data']['tenant_id']: null;
+            mesh_app['custom-data']['session-data'] = ('session-data' in event_data['data'])?event_data['data']['session-data']:('session-data' in mesh_app['custom-data'])? mesh_app['custom-data']['session-data']: null;
+            mesh_app['custom-data']['session-v'] = ('session-v' in event_data['data'])?event_data['data']['session-v']:('session-v' in mesh_app['custom-data'])? mesh_app['custom-data']['session-v']: null;
+            mesh_app['custom-data']['session-id'] = ('session-id' in event_data['data'])?event_data['data']['session-id']:('session-id' in mesh_app['custom-data'])? mesh_app['custom-data']['session-id']: null;
+            
+            if('pre-prod' in event_data['data'] && event_data['data']['pre-prod']){
+                isPreProd = true;
+                front_end_service = "https://us-central1-sonata-innovations-461822.cloudfunctions.net/pre-prod-sonata-messaging-frontend-web-interaction-service" ;
+            }
+            
+            resolve();
+        })  
+    }
+
+    const announce_session_update = (session_data,session_v) =>{
+        if( ('session-data' in mesh_app['custom-data'] && mesh_app['custom-data']['session-data'] !== session_data) ||
+        ('session-v' in mesh_app['custom-data'] && mesh_app['custom-data']['session-v'] !== session_v)){
+            mesh_app['custom-data']['session-data'] = session_data;
+            mesh_app['custom-data']['session-v'] = session_v;
+            let custom_data = {"session-data": session_data,"session-v": session_v };
+            mesh_app['api']['postMessage']("zone-service","target-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("zone-service","ui-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("zone-service","data-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("zone-service","message-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("zone-service","web-service-app","custom-data",custom_data);
+        }
+    }
+
+    mesh_app["exports"]["request-page-identification"] = request_page_identification;
+    mesh_app["exports"]["custom-data"] = resolve_custom_data;
+})

@@ -1,0 +1,1031 @@
+//version 1.0.1
+let main_session_config = {
+    trusted_domains: [],
+    current_zone: {},
+    page_load_event: '',
+    current_zone_id: '',
+    zone_target: [],
+    zone_business_target: [],
+    target_observers: {},
+    target_cta: [],
+    async_response: {},
+    async_br_fire: {},
+    proactive_active: null,
+    program_config:{
+        proactive_wait: 30
+    },
+    target_events: {
+        "agent-assigned": {
+            "data": [],
+            "rule": []
+        },
+        "start-chat": {
+            "data": [],
+            "rule": []
+        },
+        "page-loaded": {
+            "data": [],
+            "rule": []
+        }
+    }
+};
+
+let isPreProd   = false;;
+const isLocalHost = (document.location.href.match(/localhost\:/)) ? true : false;
+
+let front_end_service   = (isLocalHost)? "http://localhost:8090" : "https://us-central1-sonata-innovations-461822.cloudfunctions.net/sonata-messaging-frontend-web-interaction-service"
+
+window.addEventListener('load', () => {
+    console.log('Loading web-service-app-target.js');
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+
+    mesh_app['hasActiveChat'] = false;
+    mesh_app['hasOpenWindow'] = false;
+
+    const requested_target_page_loaded = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            console.log('Calling the target service to start page loading events',event_data);
+
+            /* private_args
+            0   zone details
+            1   native data
+            2   init rule details
+            3   deffer 0 rules
+            4   time rules
+            5   will offer rules
+
+            */
+            let private_args = [];
+            get_init_data(private_args)
+            .then(private_args => get_zone_details(private_args, event_data['data']['url'] ))
+            .then(private_args => get_data_from_page(private_args))
+            .then(private_args => initPageLoadTargetDetails(private_args,event_data['data']['page-loaded-event'],private_args[0]['zone-id']))
+            .then(private_args => ruleObserverRegister(private_args,private_args[2]))
+            .then(private_args => checkRuleCanOfferConditionalPageLoading(private_args,private_args[2],private_args[3]))
+            .then(private_args => manageDefferZeroRules(private_args,private_args[5]))
+            .then(private_args => updateButtonStates(private_args))
+            .then(private_args => manageAlreadyActiveChatInit(private_args))
+            .then(private_args => manageProRuleTimers(private_args,private_args[4]))
+            .then(private_args =>{
+                console.log('targetting so far',private_args)
+            })
+            .catch(error =>{
+                console.log('ERROR',error)
+            })
+        })
+    }
+
+
+    function checkRuleCanOfferConditionalPageLoading(private_args,all_rule_data,rule_to_offer_ids){
+        return new Promise((resolve, reject) => {
+
+            let get_all_target_data_promises = [];
+            let all_target_data = {};
+
+             console.log("checkRuleCanOfferConditionalPageLoading: requesting rule will offer data",rule_to_offer_ids)
+
+            if(rule_to_offer_ids.length > 0){
+                rule_to_offer_ids.forEach(rule_id =>{
+                    let rule_data = all_rule_data['business-rules'].find(obj => {return obj['token-id'] === rule_id});
+                    get_all_target_data_promises.push(checkRuleCanOfferConditional([],rule_data['event-id'],private_args[0]['zone-id'],[rule_id],private_args[1]))
+                })
+
+                Promise.all(get_all_target_data_promises).then((all_target_responses) => {
+                    console.log("get_all_target_data_promises received ", all_target_responses)
+
+                    all_target_responses.forEach(response_data =>{
+                        let target_response_data = response_data[0]
+                        all_target_data[ Object.keys(target_response_data)[0] ] = target_response_data[Object.keys(target_response_data)[0]];
+                    });
+                    private_args.push(all_target_data);
+                    resolve(private_args);
+                });
+            }else{
+                private_args.push(all_target_data);
+                resolve(private_args);
+            }
+
+        })
+    }
+
+    function get_zone_details(private_args,url){
+        return new Promise((resolve, reject) => {
+            mesh_app['api']['postMessage']("target-service","zone-service","request-page-identification",{"url": url},true,)
+            .then(zone_response =>{
+                if(typeof zone_response[1]['zone-id'] === "string" && zone_response[1]['zone-id'] !== ""){
+                    main_session_config['current_zone_id'] = zone_response[1]['zone-id'];
+                    private_args.push(zone_response[1]);
+                    resolve(private_args)
+                }else{
+                    console.log("zone_response",zone_response)
+                    throw {message: "no zone to offer"}
+                }
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function get_init_data(private_args){
+        return new Promise((resolve, reject) => {
+            mesh_app['api']['postMessage']("target-service","web-service-app","request-init-data",{},true)
+            .then(init_data =>{
+                mesh_app['init_data'] = init_data;
+                if("init_data" in mesh_app && mesh_app["init_data"].length == 2 && "cw" in mesh_app["init_data"][1]){
+                    mesh_app['hasOpenWindow'] = true;
+                    mesh_app['currentRuleID'] = mesh_app["init_data"][1]['rid'];
+                    if("ac" in mesh_app["init_data"][1]){
+                        mesh_app['hasActiveChat'] = true;
+                    }
+                }
+
+                resolve(private_args)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function get_data_from_page(private_args){
+        return new Promise((resolve, reject) => {
+            console.log('target service, calling data service for all data from the page');
+            mesh_app['api']['postMessage']("target-service","data-service","native-all-data-request",{},true)
+            .then(page_data =>{
+                private_args.push((page_data.length >= 1)? (page_data[1].length >= 1)? page_data[1][1] : null : null )
+                resolve(private_args)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function initPageLoadTargetDetails(private_args,event_id,zone_id) {
+        return new Promise((resolve, reject) => {
+            let device_type = ("ua" in mesh_app) ? ("device" in mesh_app["ua"]) ? ("type" in mesh_app["ua"]["device"]) ? (mesh_app["ua"]["device"]["type"] === "mobile") ? "MOB" : (mesh_app["ua"]["device"]["type"] === "tablet") ? "TAB" :  (mesh_app["ua"]["device"]["type"] === "smarttv" || mesh_app["ua"]["device"]["type"] === "console") ? "NOT-SUPPORTED" : "DESK" : "DESK" : "UNKOWN" : "UNKOWN";
+            mesh_app["device_type"] = device_type;
+            let load_url_params = {
+                "variable_data": (private_args[1] != null)? JSON.stringify(private_args[1]): null,
+                "device_type": device_type
+            }
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/target/'+event_id+'/'+zone_id,'get',null,load_url_params,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( target_data =>{
+                console.log("initPageLoadTargetDetails: ",target_data)
+                private_args.push(target_data);
+                if( 'session-data' in target_data){
+                    announce_session_update(target_data['session-data'],target_data['session-v']);
+                }
+                resolve(private_args);
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        });
+    }
+
+    function ruleObserverRegister(private_args,all_rule_data) {
+        return new Promise((resolve, reject) => {
+            try {
+                let reactive_rule_priority = {};
+                let deffer_zero = [];
+                let proactive_timer = [];
+
+                let proactive_observe = {
+                    "click":[],
+                    "mouseover": [],
+                    'mouseleave': [],
+                    "formfocused": [],
+                    "formstalled": [],
+                    "formlostfocus": []
+                }
+
+                all_rule_data['program-rules'].forEach(rule_data => {
+                    if("data-prop" in rule_data){
+                        if( "agent_assigned" in rule_data["data-prop"]){
+                            main_session_config["target_events"]["agent-assigned"]["data"] = main_session_config["target_events"]["agent-assigned"]["data"].concat(rule_data["data-prop"]["agent_assigned"]);
+                        }
+                    }
+                })
+
+                all_rule_data['business-rules'].forEach(rule_data => {
+
+                    if(rule_data["invite-type"] === "reactive"){
+                        let priority = null;
+                        if(rule_data['display-details']['div-id'] in reactive_rule_priority){
+                            priority = Object.keys(reactive_rule_priority[rule_data['display-details']['div-id']]['rules']).length + 1;
+                            rule_data.priority = priority;
+                        }else{
+                            reactive_rule_priority[rule_data['display-details']['div-id']] ={"rules": {}, "hasOffered": false, "totalOffers": 0, "totalResponses": 0};
+                            rule_data.priority = 1;
+                            priority  = 1;
+                        }
+                        reactive_rule_priority[rule_data['display-details']['div-id']]['rules'][rule_data['token-id']] = { "priority": priority, "will-offer": false};
+                        reactive_rule_priority[rule_data['display-details']['div-id']]['totalOffers'] = priority;
+                    }
+
+                    if(rule_data["invite-type"] === "proactive" ){
+                        switch(rule_data["proactive-type"]){
+                            case "launch-page-timer":
+                            case "zone-repeat-visitor":
+                            case "backtracked-visitor":
+                                proactive_timer.push(rule_data['token-id']) //proactiveRuleTimer(rule_data);
+                            break;
+                            case "web-onclick":
+                                proactive_observe['click'].push(rule_data);
+                            break;
+                            case "web-onmouseover":
+                                proactive_observe['mouseover'].push(rule_data);
+                            break;
+                            case "zone-abandon-visitor":
+                                proactive_observe['mouseleave'].push(rule_data);
+                            break;
+                        }
+                    }
+
+                    if(rule_data.deffer === "0" && rule_data["invite-type"] !== "proactive" ){
+                        deffer_zero.push(rule_data['token-id']);
+                    }
+
+                    main_session_config['async_br_fire'][rule_data['token-id']] = rule_data;
+                })
+
+                mesh_app['api']['postMessage']("target-service","parent","proactive-trigger-init",proactive_observe,false);
+                console.log("ruleObserverRegister: reactive_rule_priority: ",JSON.stringify(reactive_rule_priority));
+                main_session_config['target_cta'] = reactive_rule_priority;
+                private_args.push(deffer_zero);
+                private_args.push(proactive_timer);
+                resolve(private_args);
+
+            }catch (error){
+                console.log("ERROR: ruleObserverRegister:",error);
+                reject(error);
+            }
+        });
+    }
+
+    function proactiveRuleTimer(rule_data){
+        let timeout = (parseInt(rule_data.deffer) * 1000);
+        setTimeout(function(token_id) {
+            const rule_fire_data = main_session_config['async_br_fire'][token_id];
+            if(!mesh_app['hasOpenWindow']){
+                fireProactiveRule(rule_fire_data);
+            }else{
+                console.log("missed oppertunity",rule_fire_data);
+            }
+        }.bind(this, rule_data['token-id']), timeout)
+    }
+
+    function fireProactiveRule(rule_data) {
+        return new Promise((resolve, reject) => {
+            try{
+                let private_args = [];
+                const zone_id = main_session_config['current_zone_id'];
+                const event_id = rule_data['event-id'];
+                const rule_id = rule_data['token-id'];
+
+                //add logic for requested data
+                checkRuleCanOfferConditional(private_args,event_id,zone_id,[rule_id],{})
+                .then(private_args => manageOfferResponse(private_args,private_args[0][rule_id],rule_data))
+                .then(private_args => manageExternalCall(private_args,rule_data))
+                .then(private_args => manageAlreadyActiveChat(private_args,rule_id,private_args[2]))
+                .then(private_args => {
+                    resolve(private_args);
+                })
+                .catch(error => {
+                    reject(error);
+                });
+
+
+                function manageOfferResponse(private_args,offer_data,rule_data) {
+                    return new Promise((resolve, reject) => {
+                        let show_window = false;
+                        if(!(offer_data['hop']) && offer_data['condition']){
+                            console.log('Missed Opp - Due to HOP');
+                            reject();
+                        }else if(offer_data['aa_cct'] > offer_data['rl_cct'] && offer_data['status'] === "online" && offer_data['will_offer']){
+                            console.log('Missed Opp - Due to Busy');
+                            reject();
+                        }else if(offer_data['will_offer']){
+                            console.log('Will Show Window');
+                            console.log("fireProactiveRule",rule_data,"mesh_app",mesh_app)
+
+                            if("consumer-shield" in rule_data && rule_data['invite-type'] === "proactive"){
+                                if("cshield" in mesh_app && mesh_app["cshield"] != null &&
+                                    mesh_app["cshield"] <= rule_data["consumer-shield"]
+                                ){
+                                    console.log("fireProactiveRule: will not offer proactive, consumer shield stop")
+                                    throw {name : "consumer_shield_protection", message : "consumer cannot be offered"};
+                                }else if("cshield" in mesh_app &&
+                                    mesh_app["cshield"] > rule_data["consumer-shield"]){
+                                    console.log("fireProactiveRule: will offer proactive, update consumer shield to new value " + rule_data["consumer-shield"]);
+                                } else if(!("cshield" in mesh_app)|| mesh_app["cshield"] == null ){
+                                    mesh_app["cshield"] = rule_data["consumer-shield"];
+                                    console.log("fireProactiveRule: will offer proactive, no previous consumer shield, new value " + rule_data["consumer-shield"]);
+                                }
+                            }
+
+                            show_window = true;
+                        }else{
+                            console.log('Not known state',"offer_data",offer_data);
+                        }
+
+                        private_args.push(show_window);
+                        if(!show_window){
+                            reject(private_args);
+                        }else{
+                            resolve(private_args)
+                        }
+                    })
+                }
+
+                function manageExternalCall(private_args,rule_data) {
+                    return new Promise((resolve, reject) => {
+                        console.log("manageExternalCall",rule_data);
+                        if("mesh-app-function-call" in rule_data && rule_data["mesh-app-function-call"] != null){
+                            console.log("manageExternalCall",rule_data["mesh-app-function-call"]["name"],rule_data["mesh-app-function-call"]["function"],rule_data["mesh-app-function-call"]["params"]);
+                            rule_data["mesh-app-function-call"]["params"]["sonata-token-id"] = rule_data['token-id'];
+                            mesh_app['api']['postMessage']("target-service",
+                                rule_data["mesh-app-function-call"]["name"],
+                                rule_data["mesh-app-function-call"]["function"],
+                                rule_data["mesh-app-function-call"]["params"],
+                            false);
+                            if("display-details" in rule_data){
+                                private_args.push(false);
+                            }else{
+                                private_args.push(true);
+                            }
+                            resolve(private_args)
+                        }else{
+                            private_args.push(false);
+                            resolve(private_args)
+                        }
+                    })
+                }
+
+                function manageAlreadyActiveChat(private_args,rule_token_id,isexternal) {
+                    return new Promise((resolve, reject) => {
+                        if(mesh_app['hasActiveChat']){
+                            console.log("Sorry, active chat is open. Will fire missed opp");
+                            reject();
+                        }else{
+                            if(isexternal){
+                                resolve(private_args)
+                            }else{
+                                request_to_launch_window_rule({data: {rule_id: rule_token_id}})
+                                .then( () =>{
+                                    main_session_config['proactive_active'] = setTimeout(function() {
+                                        if(!mesh_app['hasActiveChat']){
+                                            mesh_app['api']['postMessage']("target-service","message-service","end_interaction",{"agent-ended": false, "automation-ended": true},true)
+                                            .then(() =>{
+                                                console.log("chat window session now closed");
+                                            })
+                                            .catch(error =>{
+                                                console.log(error);
+                                            })
+                                        }
+                                    }, main_session_config['program_config']['proactive_wait'] * 1000);
+
+                                    resolve(private_args);
+                                })
+                                .catch(error => {reject(error);});
+                            }
+                        }
+                    })
+                }
+
+            }catch (error){
+                console.log("ERROR: fireProactiveRule:",error);
+                reject(error);
+            }
+        })
+    }
+
+    function checkRuleCanOfferConditional(private_args,event_id,zone_id,rule_to_offer_ids,requested_data) {
+        return new Promise((resolve, reject) => {
+
+            console.log("checkRuleCanOfferConditional: rule_to_offer_ids",rule_to_offer_ids)
+
+            if(rule_to_offer_ids.length > 0){
+                let load_url_params = {
+                    "variable_data": JSON.stringify(requested_data),
+                    "rule_to_offer_ids": JSON.stringify(rule_to_offer_ids),
+                    "device_type": ("device_type" in mesh_app)? mesh_app["device_type"] : "UNKOWN"
+                }
+
+                mesh_app['api']['callAPIService'](front_end_service,'/api/web/offer/'+event_id+'/'+zone_id,'get',null,load_url_params,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+                "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+                .then( target_data =>{
+                    delete target_data['session-data'];
+                    delete target_data['session-v'];
+                    main_session_config['zone_business_target'] = target_data;
+                    private_args.push(target_data);
+                    if( 'session-data' in target_data){
+                        announce_session_update(target_data['session-data'],target_data['session-v']);
+                    }
+                    resolve(private_args);
+                }).catch(error => {
+                    reject(error);
+                });
+            }else{
+                resolve(private_args);
+            }
+
+        });
+    }
+
+    function manageAlreadyActiveChatInit(private_args) {
+        return new Promise((resolve, reject) => {
+            if("init_data" in mesh_app && mesh_app["init_data"].length == 2 && "cw" in mesh_app["init_data"][1]){
+                mesh_app['hasOpenWindow'] = true;
+                mesh_app['currentRuleID'] = mesh_app["init_data"][1]['rid'];
+                if("ac" in mesh_app["init_data"][1]){
+                    mesh_app['hasActiveChat'] = true;
+                }
+                let rule_data = find_rule_by_id(mesh_app['currentRuleID']);
+                console.log("manageAlreadyActiveChatInit: find_rule_by_id:",rule_data,mesh_app['currentRuleID']);
+                request_to_launch_window_rule({data: {rule_id: rule_data['token-id']}})
+                resolve(private_args);
+            }else{
+                resolve(private_args)
+            }
+        })
+    }
+
+    function manageProRuleTimers(private_args,will_offer_rules) {
+        return new Promise((resolve, reject) => {
+            console.log("manageProRuleTimers: ",will_offer_rules)
+            Object.keys(will_offer_rules).forEach( rule_index =>{
+                let rule_token = will_offer_rules[rule_index];
+                let rule_data = main_session_config['async_br_fire'][rule_token];
+                let invite_type = rule_data['invite-type'];
+
+                switch(invite_type){
+                    case "proactive":
+                        proactiveRuleTimer(rule_data);
+                    break;
+                }
+            })
+            resolve(private_args);
+        })
+    }
+
+    function find_rule_by_id(rule_id_find){
+        let rule_tokens = Object.keys(main_session_config['async_br_fire']);
+        for(var i=0; i< rule_tokens.length; i++){
+            if(main_session_config['async_br_fire'][rule_tokens[i]]['rule-id'] === parseInt(rule_id_find)){
+                return main_session_config['async_br_fire'][rule_tokens[i]];
+            }
+        }
+    }
+
+    /** Consider using this instead:
+     *
+        function find_rule_by_id(rule_id_find) {
+            return Object.values(main_session_config?.async_br_fire || {}).find( rule => {
+                return rule?.["rule-id"] === Number(rule_id_find);
+            })
+        }
+     *
+     */
+
+
+    function manageDefferZeroRules(private_args,will_offer_rules) {
+        return new Promise((resolve, reject) => {
+
+            console.log('manageDefferZeroRules',will_offer_rules);
+
+            let all_deffer_rule_to_fire = {};
+            let first_proactive_rule = null;
+
+            Object.keys(will_offer_rules).forEach( rule_token =>{
+                let rule_data = main_session_config['async_br_fire'][rule_token];
+                let invite_type = rule_data['invite-type'];
+
+                switch(invite_type){
+                    case "proactive":
+                        all_deffer_rule_to_fire[ rule_token ] = {
+                            "rule_data": rule_data,
+                            "offer_data": will_offer_rules[rule_token]
+                        }
+                    break;
+                    case "reactive":
+                        let cta_div_id = rule_data['display-details']['div-id'];
+                        let target_cta_data = main_session_config['target_cta'][cta_div_id];
+                        target_cta_data['totalResponses']  = (target_cta_data['totalResponses'] + 1) ;
+                        if(!(target_cta_data['hasOffered'])){
+                            console.log("reactive has not offered yet",target_cta_data['totalResponses'] , target_cta_data['totalOffers']);
+                            if(target_cta_data['totalResponses'] == target_cta_data['totalOffers']){
+                                let cta_priority_array = [];
+
+                                Object.keys(target_cta_data['rules']).forEach(rule_id =>{
+                                    target_cta_data['rules'][rule_id]['will-offer'] = will_offer_rules[rule_id]['will_offer'];
+                                    cta_priority_array[ target_cta_data['rules'][rule_id]['priority'] -1 ] = will_offer_rules[rule_id];
+                                    cta_priority_array[ target_cta_data['rules'][rule_id]['priority'] -1 ]['rule-id'] = rule_id;
+                                })
+
+                                console.log("cta_priority_array",cta_priority_array)
+                                for(i=0; i < cta_priority_array.length; i++){
+                                    let rule_data_test = cta_priority_array[i];
+                                    if(rule_data_test.condition){
+                                        target_cta_data['hasOffered'] = true;
+                                        target_cta_data['offerData'] = will_offer_rules[rule_data_test['rule-id']];
+                                        target_cta_data['ruleOffered'] =  rule_data_test['rule-id'];
+                                        console.log('target_cta_data',target_cta_data)
+                                        all_deffer_rule_to_fire[ rule_data_test['rule-id'] ] = {
+                                            "rule_data": main_session_config['async_br_fire'][rule_data_test['rule-id']],
+                                            "offer_data": rule_data_test
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    break;
+                }
+            })
+
+            let rule_promise_array = [];
+            Object.keys(all_deffer_rule_to_fire).forEach( rule_token =>{
+                rule_promise_array.push( showBusinessRule(rule_token,all_deffer_rule_to_fire[rule_token]["rule_data"],all_deffer_rule_to_fire[rule_token]["offer_data"]) )
+            })
+
+            Promise.all(rule_promise_array)
+            .then(rule_outcome => {
+                private_args.push(rule_outcome);
+                resolve(private_args);
+            })
+            .catch(error => {
+                console.log("manageDefferZeroRules: ",error);
+                reject(error)
+            })
+
+        });
+    }
+
+    function showBusinessRule(token_id,rule_data,offer_data) {
+        return new Promise((resolve, reject) => {
+            console.log('recevied notification to fire rule: ', token_id, rule_data, offer_data);
+            //resolve();
+            //report rule has been fired
+
+            let invite_type = rule_data['invite-type'];
+            let will_offer  = offer_data['will_offer'];
+
+            switch(invite_type){
+                case "proactive":
+                    console.log('will show chat window logic here ....')
+                    //fireProactiveRule
+                    resolve();
+                break;
+                case "reactive":
+                    let private_args = [];
+                    request_display_button_details( private_args, rule_data, rule_data['display-details']['button']['version'],rule_data['display-details']['button']['id'], rule_data['token-id'])
+                    .then( private_args =>{
+                        resolve();
+                    })
+                    .catch(error =>{
+                        reject(error);
+                    });
+
+                break;
+            }
+
+
+        });
+    }
+
+    function request_chat_window_close(event_data){
+        return new Promise((resolve, reject) => {
+            try{
+                let private_args = [];
+                mesh_app['hasActiveChat'] = false;
+                mesh_app['hasOpenWindow'] = false;
+
+                if(  main_session_config['proactive_active'] != null){
+                    clearTimeout(main_session_config['proactive_active']);
+                    main_session_config['proactive_active'] = null;
+                }
+
+                updateButtonStates(private_args)
+                .then(rule_outcome => {
+                    private_args.push(rule_outcome);
+                    resolve(private_args);
+                })
+                .catch(error => {
+                    console.log("updateButtonStatesExternal: ",error);
+                    reject(error)
+                })
+            }catch (error){
+                reject(error);
+            }
+        });
+    }
+
+    function updateButtonStates(private_args){
+        return new Promise((resolve, reject) => {
+            let rule_promise_array = [];
+            console.log("updateButtonStates: requested",main_session_config['target_cta'])
+            if("target_cta" in main_session_config){
+                Object.keys(main_session_config['target_cta']).forEach( cta_div_id =>{
+                    let target_cta_data = main_session_config['target_cta'][cta_div_id];
+                    console.log("updateButtonStates: manage offered buttons: ",target_cta_data['hasOffered']);
+                    if(target_cta_data['hasOffered']){
+                        rule_promise_array.push( updateButtonOnPage( target_cta_data['button_details'], target_cta_data['offerData']['will_offer'], target_cta_data['offerData'], target_cta_data['ruleOffered']) );
+                    }else{
+                        console.log("updateButtonStates: manage offered buttons: No buttons to offer for: ",target_cta_data);
+                    }
+                })
+
+                if(rule_promise_array > 0){
+                    Promise.all(rule_promise_array)
+                    .then(rule_outcome => {
+                        private_args.push(rule_outcome);
+                        resolve(private_args);
+                    })
+                    .catch(error => {
+                        console.log("updateButtonStates: ",error);
+                        reject(error)
+                    })
+                }else{
+                    console.log("updateButtonStates: manage offered buttons: no buttons to update");
+                    private_args.push([]);
+                    resolve(private_args);
+                }
+
+
+            }else{
+                console.log("updateButtonStates: manage offered buttons: no buttons to update");
+                resolve(private_args);
+            }
+
+        });
+    }
+
+    function updateButtonOnPage(button_details, will_offer, offer_data, token_id){
+        return new Promise((resolve, reject) => {
+            try{
+                let button_state = 'disabled';
+
+                if(!(mesh_app['hasOpenWindow'])){
+                    if(!(offer_data['hop']) && offer_data['condition']){
+                        button_state = "hop";
+                        console.log("token_id",token_id," not shown due to HOP");
+                   }else if(offer_data['aa_cct'] > offer_data['rl_cct'] && offer_data['status'] === "online" && will_offer){
+                        button_state = "busy";
+                        console.log("token_id",token_id," not shown due to BUSY");
+                   }else if(will_offer){
+                        button_state = "ready";
+                   }
+                }
+                console.log("button_details",button_details)
+               /* let send_button_details = {
+                    "type": button_details["type"],
+                    injected_div: button_details["states"][button_state]['injected_div'],
+                    injected_div_styles: button_details["states"][button_state]['injected_div_styles'],
+                    injected_div_inner_html: button_details["states"][button_state]['injected_div_inner_html']
+                }
+                console.log('button_state',button_state,send_button_details)*/
+
+                mesh_app['api']['postMessage']("target-service","parent","update-button",{"rule_id": token_id,"button_details": button_details, "state": button_state },false);
+                
+                resolve();
+            }catch (error){
+                reject(error);
+            }
+        });
+    }
+
+    /**********************************************************************************
+    Service Event Listeners
+    ***********************************************************************************/
+
+    function request_display_button_details(private_args,rule_data,version,id){
+        return new Promise((resolve, reject) => {
+            mesh_app['api']['postMessage']("target-service","ui-service","request-display-button-details",{"version": version, "id": id},true)
+            .then(button_details =>{
+                private_args.push(button_details);
+                let cta_div_id = rule_data['display-details']['div-id'];
+                let target_cta_data = main_session_config['target_cta'][cta_div_id];
+                target_cta_data['button_details'] = button_details[1];
+                console.log("request_display_button_details button_details",button_details,"private_args",private_args)
+                resolve(button_details)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function request_display_window_details(version,id,rule_id,rule_name,agent_queue_id,rule_args){
+        return new Promise((resolve, reject) => {
+            console.log('request_display_window_details: sending',{"agent_queue_id": agent_queue_id,"version": version, "id": id, "rule-id": rule_id, "rule-name": rule_name} )
+            mesh_app['api']['postMessage']("target-service","ui-service","request-display-window-details",{"agent_queue_id": agent_queue_id,"version": version, "id": id, "rule-id": rule_id, "rule-name": rule_name},true)
+            .then(window_details =>{
+                if(Object.keys(window_details[1].length > 0)){
+                    mesh_app['hasOpenWindow'] = true;
+                    if("cshield" in window_details){
+                        mesh_app['cshield'] = window_details['cshield'];
+                    }
+                    rule_args.push(window_details[1])
+                }else{
+                    throw "No Chat Window Config Found";
+                }
+                resolve(rule_args)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function request_window_iframe_size(rule_args,frame_details){
+        return new Promise((resolve, reject) => {
+            console.log("request_window_iframe_size",frame_details)
+
+            if("device_type" in mesh_app && mesh_app["device_type"] === "MOB"){
+                frame_details.height = "100%";
+                frame_details.width = "100%";
+                frame_details.top = "0px";
+                frame_details.right = "0px";
+                frame_details.left = "0px";
+                frame_details.bottom = "0px";
+                frame_details.position = "fixed";
+
+            }
+
+            mesh_app['api']['postMessage']("target-service","parent","resize-iframe",{"frame_details": frame_details},true)
+            .then(() =>{
+                resolve(rule_args)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function request_app_resize(service, overrides, rule_args){
+        return new Promise((resolve, reject) => {
+            mesh_app.api.postMessage("target-service", "web-service-app", "primary-service-resize", {
+                frame_details: {
+                    background: "transparent",
+                    border: "none",
+                    bottom: overrides?.bottom ?? 0,
+                    display: "block",
+                    height: overrides?.height ?? "100%",
+                    position: "absolute",
+                    width: overrides?.width ??"100%"
+                },
+                "service_id": mesh_app.service[service].id},
+                true
+            )
+            .then(() =>{
+                console.log('request iframe resize completed', service)
+                resolve(rule_args)
+            })
+            .catch(error =>{
+                console.log("APP RESIZE FAILED")
+                reject(error);
+            })
+        })
+    }
+
+    function request_proactive_launch(event_data){
+        return new Promise((resolve, reject) => {
+            try{
+                const rule_fire_data = main_session_config['async_br_fire'][event_data['data']['rule-id']];
+                console.log("request_proactive_launch: rule_fire_data",rule_fire_data,"event_data",event_data);
+                console.log("hasActiveChat",mesh_app['hasActiveChat'],"hasOpenWindow",mesh_app['hasOpenWindow']);
+                if(!mesh_app['hasOpenWindow']){
+                    if("deffer" in rule_fire_data && rule_fire_data["deffer"] !== "0"){
+                        proactiveRuleTimer(rule_fire_data);
+                    }else{
+                        fireProactiveRule(rule_fire_data);
+                    }
+                    resolve();
+                }else{
+                    console.log("missed oppertunity",rule_fire_data);
+                    resolve();
+                }
+            }catch (error){
+                console.log("ERROR: ruleObserverRegister:",error);
+                reject(error);
+            }
+        })
+    }
+
+    function request_window_to_display(rule_args){
+        return new Promise((resolve, reject) => {
+            mesh_app['api']['postMessage']("target-service","ui-service","request-display-window",mesh_app['init_data'],true)
+            .then(() =>{
+                console.log('request_window_to_display completed')
+                resolve(rule_args)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    function send_auto_opener(rule_args,auto_opener){
+        return new Promise((resolve, reject) => {
+            if(!(mesh_app['hasActiveChat']) && auto_opener != null){
+                mesh_app['api']['postMessage']("target-service","chat-ui-service","request-show-auto-opener",{"auto_opener": auto_opener},true)
+                .then(() =>{
+                    console.log('request-show-auto-opener completed')
+                    resolve(rule_args)
+                })
+                .catch(error =>{
+                    reject(error);
+                })
+            }else{
+                resolve(rule_args)
+            }
+
+        })
+    }
+
+    function request_to_launch_window_rule(event_data){
+        return new Promise((resolve, reject) => {
+
+            let rule_fired = main_session_config['async_br_fire'][event_data['data']['rule_id']];
+            console.log('rule_fired',rule_fired,'event_data',event_data)
+
+            if(typeof rule_fired !== 'undefined'){
+
+                //change button state for all buttons updateButtonStates
+
+                //get window details
+                let rule_args = []
+                console.log("rule_fired['display-details']['chat-window']",rule_fired['display-details']['chat-window'])
+                request_display_window_details(rule_fired['display-details']['chat-window']['version'],rule_fired['display-details']['chat-window']['id'],rule_fired['token-id'],rule_fired['rule-name'],rule_fired['agent-queue-id'],rule_args)
+                .then(rule_args => updateButtonStates(rule_args))
+                .then(rule_args => request_window_iframe_size(rule_args,rule_args[0]['frame_details']))
+                .then(rule_args => request_app_resize("ui-service",{}, rule_args))
+                .then(rule_args => request_window_to_display(rule_args))
+
+                .then(rule_args =>{
+                        if(rule_fired["display-details"]["mesh-app-function-call"]?.name === "fbre-service") {
+                        console.log("fbre detected, loading fbre experience")
+                        return fbre_service_load(rule_args, rule_fired["display-details"]["mesh-app-function-call"]);
+
+                    } else {
+                        return send_auto_opener(rule_args,("consumer-auto-opener" in rule_fired)?rule_fired["consumer-auto-opener"]:null)
+                    }
+                })
+                // .then(rule_args => send_auto_opener(rule_args,("consumer-auto-opener" in rule_fired)?rule_fired["consumer-auto-opener"]:null))
+                .then(rule_args =>{
+                    console.log('request_to_launch_window_rule: rule_args',rule_args)
+                    resolve();
+                })
+                .catch(error =>{
+                    console.log('rule_args',rule_args)
+                    console.log("ERROR:",error);
+                    reject(error);
+                })
+
+            }else{
+                console.log("ERROR: rule fired is not found: ", JSON.stringify(event_data));
+                reject();
+            }
+        })
+    }
+
+    function fbre_service_load(rule_args, fbre_args) {
+        return new Promise((resolve, reject) => {
+            request_app_resize("fbre-service", {bottom: "10px", height: "calc(100% - 54px)"}, rule_args)
+           fbre_args.params.flow.screens.forEach(screen=>{
+            screen.components.forEach(component=> {
+                if(component.properties.regex) component.properties.regex = "";
+                if(component.type === "group") {
+                    component.components.forEach(c => {
+                        if(c.properties.regex) c.properties.regex = "";
+                    })
+                }
+            })
+           })
+
+
+            mesh_app.api.postMessage("target-service","fbre-service","load-fbre",fbre_args.params)
+            resolve(rule_args);
+        })
+    }
+
+    function external_function_call_invoked(event_data){
+        return new Promise((resolve, reject) => {
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/external/offered/' + event_data['data']['rule_id'],'post',null,undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( all_interation_details =>{
+                console.log('external function service call recorded');
+                if( 'session-data' in all_interation_details){
+                    announce_session_update(all_interation_details['session-data'],all_interation_details['session-v']);
+                }
+                if("cshield" in all_interation_details){
+                    mesh_app['cshield'] = all_interation_details['cshield'];
+                }
+                resolve(all_interation_details)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    const resolve_custom_data = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            mesh_app['custom-data']['tenant_id']    =   ('tenant_id' in event_data['data'])?event_data['data']['tenant_id']:('tenant_id' in mesh_app['custom-data'])? mesh_app['custom-data']['tenant_id']: null;
+            mesh_app['custom-data']['session-data'] =   ('session-data' in event_data['data'])?event_data['data']['session-data']:('session-data' in mesh_app['custom-data'])? mesh_app['custom-data']['session-data']: null;
+            mesh_app['custom-data']['session-v']    =   ('session-v' in event_data['data'])?event_data['data']['session-v']:('session-v' in mesh_app['custom-data'])? mesh_app['custom-data']['session-v']: null;
+            mesh_app['custom-data']['session-id']   =   ('session-id' in event_data['data'])?event_data['data']['session-id']:('session-id' in mesh_app['custom-data'])? mesh_app['custom-data']['session-id']: null;
+
+            if('pre-prod' in event_data['data'] && event_data['data']['pre-prod']){
+                isPreProd = true;
+                front_end_service = "https://us-central1-sonata-innovations-461822.cloudfunctions.net/pre-prod-sonata-messaging-frontend-web-interaction-service" ;
+            }
+
+            if('csh' in event_data['data']){ mesh_app["cshield"] = event_data['data']['csh'] }
+            if('ua' in event_data['data']){ mesh_app["ua"] = event_data['data']['ua'] }
+
+            console.log("resolve_custom_data",mesh_app["cshield"],event_data);
+            resolve();
+        })
+    }
+
+    const requested_chat_init = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            mesh_app['hasActiveChat'] = true;
+            if(main_session_config['proactive_active'] != null){
+                clearTimeout(main_session_config['proactive_active']);
+                main_session_config['proactive_active'] = null;
+                console.log("proactive_active has been destroyed")
+            }
+            resolve();
+        })
+    }
+
+    const announce_session_update = (session_data,session_v) =>{
+        if( ('session-data' in mesh_app['custom-data'] && mesh_app['custom-data']['session-data'] !== session_data) ||
+        ('session-v' in mesh_app['custom-data'] && mesh_app['custom-data']['session-v'] !== session_v)){
+            mesh_app['custom-data']['session-data'] = session_data;
+            mesh_app['custom-data']['session-v'] = session_v;
+            let custom_data = {"session-data": session_data,"session-v": session_v };
+            mesh_app['api']['postMessage']("target-service","zone-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("target-service","ui-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("target-service","data-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("target-service","message-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("target-service","web-service-app","custom-data",custom_data);
+        }
+    }
+
+
+    const emitted_external_event = (event_data) =>{
+        console.log("emitted_external_event herd",event_data);
+        if(typeof event_data['data']['event'] === "string"){
+            switch(event_data['data']['event']){
+                case "agent-assigned":
+                    if(mesh_app['hasActiveChat']){
+                        //data send to agent
+                        console.log("emitted_external_event sending data pass: getting data: ",main_session_config["target_events"]["agent-assigned"]);
+                        let private_args = [];
+                        get_data_from_page(private_args)
+                        .then(private_args =>{
+                            console.log("received data from page",private_args)
+                            if(private_args[0] != null ){
+                                let current_page_data = JSON.parse(private_args[0] )
+                                let send_data_pass = {};
+                                main_session_config["target_events"]["agent-assigned"]["data"].forEach(prop =>{
+                                    if(prop in current_page_data ){
+                                        send_data_pass[prop] = current_page_data[prop];
+                                    }
+                                });
+                                if(Object.keys(send_data_pass).length > 0){
+                                    console.log("************* send_data_pass ************",send_data_pass,{"message": "show-agent", "message_type": "24", "message_data": JSON.stringify(send_data_pass) });
+                                    mesh_app['api']['postMessage']("target-service","message-service","send_message",{"message": "show-agent", "message_type": "24", "message_data": JSON.stringify(send_data_pass) },true)
+                                    .then(() =>{
+                                        console.log("message data sent to agent",send_data_pass)
+                                        resolve()
+                                    })
+                                    .catch(error =>{console.log(error)})
+                                }
+                            }
+                        })
+                        .catch(error =>{console.log(error)})
+                    }
+                break;
+            }
+        }
+
+    }
+
+    mesh_app["exports"]["event-listen"]                     = emitted_external_event
+    mesh_app["exports"]["requested-target-page-loaded"]     = requested_target_page_loaded
+    mesh_app["exports"]["external-function-invoked"]        = external_function_call_invoked
+    mesh_app["exports"]["launch-reactive-window"]           = request_to_launch_window_rule;
+    mesh_app["exports"]["request-proactive-launch"]         = request_proactive_launch
+    mesh_app["exports"]["chat-init"]                        = requested_chat_init
+    mesh_app["exports"]["chat-window-closed"]               = request_chat_window_close;
+    mesh_app["exports"]["custom-data"]                      = resolve_custom_data;
+})

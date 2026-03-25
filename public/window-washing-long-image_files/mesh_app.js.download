@@ -1,0 +1,290 @@
+window.addEventListener('load', () => {
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+    mesh_app['timeout']             = 10000;
+    mesh_app['api']                 = {};
+    mesh_app['service']             = {};
+    mesh_app['async-requests']      = {};
+    mesh_app['async-response']      = {};
+
+    const json_string_config        = document.getElementById('mesh_config').value;
+    const app_config                = JSON.parse( json_string_config.replace(/'/g,'"') );
+    const prim_json_string_config   = document.getElementById('prim_mesh_config').value;
+    const prim_app_config           = JSON.parse( prim_json_string_config.replace(/'/g,'"') );
+    const is_primary_app            = (app_config['type'] === 'primary')?true:false;
+    
+    prim_app_config["installed-apps"].forEach( service_app => {
+        mesh_app['service'][service_app.name] = service_app;
+    })
+
+    mesh_app['custom-data']  =  (typeof prim_app_config['custom-data'] !== "undefined")? prim_app_config['custom-data'] : {};
+
+    console.log('custom-data',  mesh_app['custom-data'] )
+
+    window.addEventListener("message", (event) => {
+
+        if( event.origin === document.referrer || event.origin + '/' === document.referrer || event.origin === document.location.origin){
+            const from_parent               = !(document.location.href.includes(event.origin));
+            const from_primary              = (document.location.href.includes(prim_app_config["id"]));
+            const event_data                = ("data" in event && event.data !== '')? JSON.parse(event.data): {};
+            const event_from                = ("from" in event_data && event_data['from'] !== '')? (from_primary && event_data['from'] === prim_app_config["id"] || from_parent)? "parent" : event_data['from'] : '';
+            const event_to                  = ("to" in event_data && event_data['to'] !== '')? event_data['to']:  '';
+            const requested_event_type      = ("event" in event_data)? event_data['event']: "none"; 
+            const event_token_id            = ("token_id" in event_data)? event_data['token_id']: null; 
+
+            console.log(app_config['id']," ",app_config['name'], " herd: ",event,' : event_data',event_data," isparent ",from_parent,"event_from",event_from,"event_to",event_to,"event_token_id",event_token_id);
+
+            let mesh_app_resolved_by_app = false;
+
+            if(requested_event_type === "async-response" && event_to === mesh_app['service']['self']['name'] ){
+                clearTimeout(mesh_app['async-requests'][event_token_id]["timeout_controller"])
+                let private_args = mesh_app['async-requests'][event_token_id].private_args;
+                private_args.push( (typeof event_data['data']['response_data'] !== "undefined")? event_data['data']['response_data'] : (event_data["response_data"] !== "undefined")? event_data["response_data"] : null);
+                mesh_app['async-requests'][event_token_id].promise_resolve(private_args);
+                console.log(app_config['name'], ': resolving async request: token: ', event_token_id, event_data )
+                mesh_app['async-requests'][event_token_id] = undefined;
+                mesh_app_resolved_by_app = true;
+            }
+
+            if(!mesh_app_resolved_by_app){
+                for(i=0; i < app_config["listen-functions"].length; i++){
+                    let listen_event_config = app_config["listen-functions"][i];
+                    if( listen_event_config['to'].includes(event_to) && 
+                    (listen_event_config['from'].includes(event_from) || (from_primary && event_data['from'] === prim_app_config["id"]) ) &&
+                        listen_event_config["name"] === requested_event_type){
+                        console.log(requested_event_type," executing the requested event");
+                        try{
+                            mesh_app_resolved_by_app = true;
+                            if(event_token_id == null){
+                                //its sync just run and done
+                                mesh_app['exports'][requested_event_type](event_data);
+                            }else{
+                                //its async, expecting a response to send
+                                mesh_app['async-response'][event_token_id] = event_data;
+                                resolve_async_request(requested_event_type,event_data,event_token_id)
+                                .then(resolve_data =>{
+                                    console.log('now call the requesting service back',event_data,event_token_id,resolve_data)
+                                    mesh_app['api']['postMessage'](event_data['to'],event_data['from'],"async-response",{response_data: resolve_data, token_id: event_token_id },false);
+                                })
+
+                                // promise inside a promise to continue the management of data
+                                function resolve_async_request(requested_event_type,event_data,event_token_id){
+                                    return new Promise((resolve, reject) => {
+                                        mesh_app['exports'][requested_event_type](event_data)
+                                        .then(response_data =>{
+                                            //console.log('ok will send this back now',response_data)
+                                            //console.log(this);
+                                            resolve(response_data)
+                                        })
+                                        .catch(error => {
+                                            console.log('ERROR',error)
+                                            reject(error);
+                                        })
+
+                                    })
+                                }
+                                
+                            }
+                            
+                        }catch(error){
+                            console.log("ERROR: ",requested_event_type," ",error);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if(!mesh_app_resolved_by_app && !from_primary && from_parent && event_from === "parent" 
+                || (!mesh_app_resolved_by_app && is_primary_app)){
+                if(prim_app_config["public-functions"].includes(requested_event_type) || (!mesh_app_resolved_by_app && is_primary_app)){
+
+                    let app_posting_to      = mesh_app['service'][event_to];
+                    if(typeof app_posting_to !== "undefined"){
+                        console.log('**** Posting to secondary app ',app_posting_to['id']);
+                        let iframe_posting = document.getElementById(app_posting_to['id']);
+                        iframe_posting.contentWindow.postMessage(event.data,iframe_posting.contentWindow.origin);
+                        mesh_app_resolved_by_app = true;
+                    }else if(event_to === "parent" && is_primary_app){
+                        console.log('**** Posting to parent app ***** ',event_token_id);
+                        mesh_app['async-response'][event_token_id] = event_data;
+                        parent.postMessage(event.data, '*');
+                        mesh_app_resolved_by_app = true;
+                    }else if(is_primary_app && requested_event_type === "async-response"){
+                        let event_app = mesh_app['async-response'][event_token_id];
+                        console.log('async-response from token, event_app',event_app,mesh_app['async-response'])
+                        app_posting_to      = mesh_app['service'][event_app['from']];
+                        event_data['response_data'] = event_data['data']
+                        event_data['to'] = event_app['from'];
+                        event_data['to'] = event_app['from'];
+                        event_data['from'] = event_app['to'];
+                        event_data['token_id'] = event_token_id;
+                        console.log('**** Posting to secondary app: async-response: ',app_posting_to['id'],event.data,event_app['from'],event_app['to']);
+                        let iframe_posting = document.getElementById(app_posting_to['id']);
+                        iframe_posting.contentWindow.postMessage(JSON.stringify(event_data),iframe_posting.contentWindow.origin);
+                        mesh_app_resolved_by_app = true;
+                        mesh_app['async-response'][event_token_id] = undefined;
+                    } else{
+                        console.log(app_config['id']," ",app_config['name'], ' front-end service call rejected: due to not finding the app registered');
+                    }
+                }else{
+                    console.log("WARN: ",requested_event_type," not-executing the requested event");
+                }
+            }
+
+        }
+    });
+
+    mesh_app['service']['self'] = app_config;
+    
+    mesh_app['api']['postMessage'] = (from,to,event,data,async) =>{
+        return new Promise((resolve, reject) => {
+            let post_function = app_config["post-functions"].find(obj => {return (obj.name === event) });
+            console.log("mesh_app: postMessage: ","post-functions: ",app_config["post-functions"]," JSON post_function: ", JSON.stringify(post_function)," from: ",from," to: ",to," event: ",event," data: ",data," async: ",async)
+            console.log("mesh_app: postMessage: function check: "," async-response: ",( event === "async-response"), " typeof post_function: ",typeof post_function !== "undefined");
+            if(typeof post_function !== "undefined"){console.log(" from: ",post_function['from'].includes(from), " to: ", post_function['to'].includes(to));}
+            
+            if(( event === "async-response") || (typeof post_function !== "undefined"
+                && post_function['from'].includes(from)
+                && post_function['to'].includes(to))
+            ){
+                let data_send = {
+                    "event": event,
+                    "data": data,
+                    "from": from,
+                    "to": to
+                };
+
+                if(event === "async-response"){
+                    data_send['token_id'] = data['token_id'];
+                }
+
+                if(async){
+                    const generateUUID = () =>([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>(c ^(crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
+                    const token_id = generateUUID();
+                    const timeout  = mesh_app['timeout'];
+                    mesh_app['async-requests'][token_id] = {
+                        "promise_resolve": resolve,
+                        "promise_reject": reject,
+                        "private_args": [data],
+                        "data_received": false,
+                        "timeout_controller": setTimeout(function(token_id) {
+                            mesh_app['async-requests'][token_id].promise_reject({name : "timeout_controller_exceed", message : "Timeout has exceeded, cancelling job " + token_id, app_name: app_config['name'], event: event, data: data, to: to, from: from})
+                        }.bind(this, token_id, event, data, to, from), timeout)
+                    };
+                    data_send["token_id"] = token_id;
+                }
+
+                let JSON_String = JSON.stringify(data_send);
+                
+                if(to === "parent" || (!is_primary_app && parent.location.origin === location.origin)){
+                    parent.postMessage(JSON_String, '*');
+                    if(typeof async === 'undefined' || !async){
+                        resolve();
+                    }
+                }else{
+                    let app_posting_to      = mesh_app['service'][to];
+                    if(typeof app_posting_to !== "undefined"){
+                        let iframe_posting = document.getElementById(app_posting_to['id']);
+                        iframe_posting.contentWindow.postMessage(JSON_String,iframe_posting.contentWindow.origin);
+                        if(typeof async === 'undefined' || !async){
+                            resolve();
+                        }
+                    }else{
+                        console.log(app_config['id']," ",app_config['name'], ' front-end service call rejected: due to finding the app registered');
+                        reject();
+                    }
+                }
+                
+            }else{
+                console.log(app_config['id']," ",app_config['name'], ' front-end service call rejected',from,to,event,data);
+                reject();
+            }   
+        });
+    }
+    
+    mesh_app['api']['logError'] = (error) => {
+        console.log('mesh_app: api: error:',error);
+        console.log(error.toString())
+        let formData = new FormData();
+        formData.append('error', error.toString() );
+    
+        mesh_app['api']['callAPIService']('/api/log/error','POST',formData,'')
+        .then( event_log_id =>{
+            console.log(event_log_id);
+        }).catch(error => {
+            console.log(error);
+        });
+    }
+    
+    mesh_app['api']['callAPIService'] = (url,path,meathod,data,url_params,headers_add) =>{
+        return new Promise((resolve, reject) => {
+            let url_obj =  (typeof url === "undefined") ? new URL(document.location.origin + path) : new URL(url + path);
+            let api_url =  url_obj.href ; 
+            /*if(!(url_obj.host.match(/localhost/))){ 
+                url_obj.pathname = "/abodol-frontend-web-interaction-service" + url_obj.pathname;
+                api_url =  url_obj.href ; 
+            }*/
+
+            var formBody = [];
+            let headers = (typeof headers_add !== "undefined" && typeof headers_add === "object")? headers_add : {};
+
+            if(typeof url_params !== 'undefined'){
+                const params = new URLSearchParams();
+                Object.keys(url_params).forEach(variable_key => {
+                    params.set(variable_key,url_params[variable_key]);
+                })
+                api_url = api_url + '?' + params.toString();
+                console.log("url_params",params,params.toString())
+            }
+            if(meathod !== 'undefined' && meathod === 'post'){
+                var formBody = [];
+                for (var property in data) {
+                    var encodedKey = encodeURIComponent(property);
+                    var encodedValue = encodeURIComponent(data[property]);
+                    formBody.push(encodedKey + "=" + encodedValue);
+                }
+                formBody = formBody.join("&");
+                data = formBody;
+                headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';                
+            }
+
+            console.log('callAPIService: ',api_url,url_obj,url,headers);
+
+            fetch(api_url, {
+                method: (typeof meathod !== 'undefined') ? meathod : 'get',
+                body: (typeof data !== 'undefined') ? data : null,
+                headers: headers
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // make the promise be rejected if we didn't get a 2xx response
+                    reject({message: "Not 2xx response", cause: response});
+                } else {
+                    return response.json();
+                }
+            })
+            .then(data =>{
+                resolve(data);
+            })
+            .catch(error =>{
+                reject(error);
+            });
+        });
+    }
+
+    if("init" in mesh_app['service']['self']){
+        mesh_app['exports'][mesh_app['service']['self']['init']]();
+    }
+
+    Object.keys(mesh_app['exports']).forEach(mesh_app_export_key => {
+        let mesh_app_export_function = mesh_app['exports'][mesh_app_export_key];
+        //console.log('Validating ',mesh_app_export_function)
+        if((("init" in mesh_app['service']['self'] && mesh_app_export_function !== mesh_app['service']['self']['init']) 
+            || !("init" in mesh_app['service']['self']) )
+            && !(mesh_app_export_function && typeof mesh_app_export_function.then === 'function')){
+            //console.log('ALERT: ',mesh_app_export_key,' : is not a promise');
+        }
+    })
+
+})
+

@@ -1,0 +1,20 @@
+window.addEventListener('load', () => {
+    console.log('Loading web-service-app-lp.js');
+
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+
+    const launch_lp_pro_chat = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            console.log('Calling the parent SDK to launch lp proactive',event_data);
+            mesh_app['api']['postMessage']("lp-service","parent","in-page-function-call",{
+                "func_name": "triggerLPChat",
+                "func_params": ("data" in event_data )? event_data['data'] : {}
+            },false)
+            resolve();
+        })
+    }
+
+    mesh_app["exports"]["launch-lp-proactive-chat"] = launch_lp_pro_chat;
+
+});

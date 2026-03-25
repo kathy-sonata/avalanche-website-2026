@@ -1,0 +1,373 @@
+//Version 1.0.1
+
+let sonata_main_iframe      = null;
+let sonata_chat_sdk         = {};
+
+let async_response_manager  = [];
+let sonata_config_overides  = (typeof sonata_lander !== 'undefined') ? sonata_lander : {};
+let sonata_trust_domains    = (typeof sonata_config_overides['domains'] !== 'undefined') ? sonata_config_overides['domains'] : ["http://localhost:8102","http://localhost:8090","https://mesh.sonatainnovations.com","https://us-central1-sonata-innovations-461822.cloudfunctions.net"];
+
+const trusted_functions     = (typeof sonata_lander !== 'undefined' && "trusted_functions"   in sonata_lander) ? sonata_lander['trusted_functions'] : [];
+
+(function () {
+
+    let mesh_tenant_id          = "";
+
+    if(typeof sonata_data_layer !== 'undefined'){
+        sonata_data_layer['hasLoaded'] = true;
+    }
+
+    const isDemoService              =  (typeof sonata_lander !== 'undefined' && "demo_service" in sonata_lander)? sonata_lander['demo_service'] : (document.querySelector(['script[data-demo]']) == null) ? false : true;
+    const isPreProdService           =  (document.querySelector(['script[data-pre-prod]']))? true : false;
+    const mesh_front_end_service     =  (isDemoService) ? "http://localhost:8102" : "https://mesh.sonatainnovations.com";
+
+    const mesh_app_id           = (typeof sonata_lander !== 'undefined' && "mesh_app_id"        in sonata_lander) ? sonata_lander['mesh_app_id'] : (document.querySelector(['script[data-mesh-app-id]'])) ? document.querySelector(['script[data-mesh-app-id]']).getAttribute('data-mesh-app-id') : null;
+    const mesh_app_version      = (typeof sonata_lander !== 'undefined' && "mesh_app_version"   in sonata_lander) ? sonata_lander['mesh_app_version'] : (document.querySelector(['script[data-mesh-app-version]'])) ? document.querySelector(['script[data-mesh-app-version]']).getAttribute('data-mesh-app-version') : null;
+
+    const initMainFrame = () =>{
+        if(isDemoService){
+            console.log("***** Running local demo version ******")
+        }
+
+        if(document.querySelector(['script[data-id-son-tenant]']) != null){
+            let tenant_id = document.querySelector(['script[data-id-son-tenant]']).getAttribute('data-id-son-tenant');
+            mesh_tenant_id = tenant_id;
+            addFrameListener();
+            addMainIframeToPage(tenant_id);
+        }else if(typeof sonata_lander !== 'undefined' && "tenant_id" in sonata_lander){
+            let tenant_id = sonata_lander["tenant_id"];
+            mesh_tenant_id = tenant_id;
+            addFrameListener();
+            addMainIframeToPage(tenant_id);
+          }else{
+            console.log('will not load, no tenant-id found');
+        }
+    }
+
+    const postMessageToBridge = (message) =>{
+        let JSON_String = JSON.stringify(message);
+        console.log("websdk: postMessageToBridge: ",JSON_String,mesh_front_end_service + "/media/" + mesh_app_id + "/" + mesh_app_version + "/init.html?tenant_id=" + mesh_tenant_id)
+        sonata_main_iframe.contentWindow.postMessage(JSON_String,mesh_front_end_service + "/media/" + mesh_app_id + "/" + mesh_app_version + "/init.html?tenant_id=" + mesh_tenant_id);
+    }
+
+    const addMainIframeToPage = (tenant_id) =>{
+        let iframe = document.createElement('iframe');
+        iframe.setAttribute("sandbox", "allow-same-origin allow-scripts allow-popups allow-modals");
+        iframe.style.display = "none";
+        iframe.setAttribute("id","sonata-interaction-frame");
+        iframe.setAttribute("data-id-son-tenant",tenant_id);
+        iframe.src = mesh_front_end_service + "/media/" + mesh_app_id + "/" + mesh_app_version + "/init.html?tenant_id=" + tenant_id + ((isPreProdService)? "&pre-prod=true" : "");
+        sonata_main_iframe = document.body.appendChild(iframe);
+        console.log("mesh_app_id",mesh_app_id,"mesh_app_version",mesh_app_version,"tenant_id",tenant_id)
+    }
+
+    const addFrameListener = ()=>{
+        window.addEventListener("message", (event) => {
+            if (sonata_trust_domains.includes(event.origin)){
+                console.log('websdk heard: ',event)
+                if("data" in event){
+                    const event_data = JSON.parse(event.data);
+                    switch(event_data.event){
+                        case "websdk-iframe-loaded":
+                            var url = (window.location != window.parent.location)? document.referrer: document.location.href;
+                            console.log("websdk-iframe-loaded event",event.data,"000000");
+                            console.log("sending the data: ",{ "page-loaded-event": event_data['data']['page-land-event'],"url": url })
+                            postMessageToBridge({"event": "requested-target-page-loaded", "to": "target-service", "from": mesh_app_id, data:{ "page-loaded-event": event_data['data']['page-land-event'],"url": url } });
+                        break;
+                        case "request-tenant-id":
+                            var token_id        = event_data.token_id;
+                            console.log("request_tenant_id - sending it back",{"event": "async-response", "data": JSON.stringify({"tenant_id": mesh_tenant_id}), "token_id": token_id, "from": "parent"})
+                            postMessageToBridge({"event": "async-response", "data": JSON.stringify({"tenant_id": mesh_tenant_id}), "token_id": token_id });
+                        break;
+                        case "native-all-data-request":
+                            var token_id        = event_data.token_id;
+                            retrieveAllNativeDataValue(token_id)
+                        break;
+                        case "resize-iframe":
+                            var frame_details   = event_data['data']['frame_details'];
+                            var token_id        = event_data.token_id;
+                            resizeMainFrame(frame_details,token_id);
+                        break;
+                        case "native-data-request":
+                            var token_id        = event_data.token_id;
+                            var requested_keys  = event_data.requested_keys
+                            retrieveNativeDataValue(token_id,requested_keys)
+                        break;
+                        case "in-page-function-call":
+                            var token_id        = event_data.token_id;
+                            var function_event_data   = event_data['data'];
+                            callInPageFunction(token_id,function_event_data)
+                        break;
+                        case "custom-data":
+                            var token_id        = event_data.token_id;
+                            console.log("webSDK: custom-data herd")
+                            if("session-data" in event_data['data'] && "session-v" in event_data['data']){
+                                var session_data    = event_data['data']['session-data'];
+                                var session_v       = event_data['data']['session-v'];
+                                console.log("webSDK: storing updated session data");
+                                storeDataToPage(token_id,session_data,session_v)
+                            }
+                        break;
+                        case "retrieve-session":
+                            var token_id            = event_data.token_id;
+                            const getSessionData    = getStoredDataFromPage(token_id);
+                            console.log("retrieve-session",getSessionData,token_id)
+                            postMessageToBridge({"event": "async-response", "to": "web-service-app", "from": mesh_app_id, "data": { "response_data": getSessionData }, "token_id": token_id });
+                        break;
+                        case "update-button":
+                            var button_details  = event_data['data']['button_details'];
+                            var token_id        = event_data['data']['rule_id'];
+                            var state           = event_data['data']['state'];
+                            addClickButton(token_id,button_details,state)
+                        break;
+                        case "proactive-trigger-init":
+                            let proactive_observe  = event_data['data'];
+
+                            if(proactive_observe['click'].length > 0){
+                                let rule_token_map = {};
+                                for(let rule_data of proactive_observe['click']){
+                                    rule_token_map[rule_data['querySelector']] = rule_data['token-id']
+                                }
+                                let query_selectors = Object.keys(rule_token_map);
+                                document.addEventListener('click', function(event) {
+                                    for (let selector of query_selectors) {
+                                        if(event.target.matches(selector)) {
+                                            postMessageToBridge({"event": "request-proactive-launch", "to": "target-service", "from": mesh_app_id, data:{ "rule-id": rule_token_map[selector]} });
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+
+                            if(proactive_observe['mouseover'].length > 0){
+                                let rule_token_map = {};
+                                for(let rule_data of proactive_observe['mouseover']){
+                                    rule_token_map[rule_data['querySelector']] = rule_data['token-id']
+                                }
+                                let query_selectors = Object.keys(rule_token_map);
+                                document.addEventListener('mouseover', function(event) {
+                                    for (let selector of query_selectors) {
+                                        if(event.target.matches(selector)) {
+                                            postMessageToBridge({"event": "request-proactive-launch", "to": "target-service", "from": mesh_app_id, data:{ "rule-id": rule_token_map[selector]} });
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+
+                            if(proactive_observe['mouseleave'].length > 0){
+                                proactive_observe['mouseleave'].forEach(rule_data =>{
+                                    document.addEventListener('visibilitychange', function() {
+                                        if (document.visibilityState === 'hidden') {
+                                            setTimeout(function() {
+                                                if (document.visibilityState === 'hidden') {
+                                                   postMessageToBridge({"event": "request-proactive-launch", "to": "target-service", "from": mesh_app_id, data:{ "rule-id": rule_data['token-id']} });
+                                                }
+                                            }, rule_data['deffer'] * 1000);
+                                        }
+                                    });
+                                })
+                            }
+
+                        break;
+                        case "async-response":
+                            var token_id = event_data.token_id;
+                            var response_data = JSON.parse(event_data.data);
+                            console.log("async-response",token_id,async_response_manager[token_id],response_data,);
+                            clearTimeout(async_response_manager[token_id]["timeout_controller"])
+                            let private_args = async_response_manager[token_id].private_args;
+                            private_args.push(response_data);
+                            async_response_manager[token_id].promise_resolve(private_args);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    const addClickButton = (rule_token, button_details, state) => {
+        console.log("addClickButton",rule_token,button_details);
+        if(button_details.type === "embedded" ){
+            // let injected_div = document.createElement("div");
+            // document.body.appendChild(injected_div);
+        }else if(button_details.type === "floating" ){
+            let temp_div = document.getElementById(button_details["button-name"]) ?? document.createElement("div");
+            const button = create_cta_button(rule_token, button_details, state);
+            button.id = button_details["button-name"];
+            !temp_div.id && document.body.appendChild(temp_div);
+            temp_div.replaceWith(button);
+
+            // let injected_div = document.createElement("div");
+            // create_cta_button(injected_div,button_details,rule_token,state)
+            // if(document.getElementById(div_id) != null){
+            //     document.getElementById(div_id).replaceWith(injected_div);
+            // }else{
+            //     document.body.appendChild(injected_div);
+            // }
+        }
+    }
+
+    function call_to_action_invoked(){
+        console.log('cta button clicked',this)
+        let rule_triggered = this.getAttribute("data-token");
+        postMessageToBridge({"event": "launch-reactive-window", "to": "target-service", "from": mesh_app_id, data:{ "rule_id": rule_triggered } });
+    }
+
+    function external_function_call_invoked(rule_triggered){
+        console.log('external_function_call_invoked',rule_triggered)
+        postMessageToBridge({"event": "external-function-invoked", "to": "target-service", "from": mesh_app_id, data:{ "rule_id": rule_triggered } });
+    }
+
+    function create_cta_button(rule_token, button_details, state) {
+        const parent = create_cta_element(button_details.states[state]);
+        parent.setAttribute("state", state);
+        parent.setAttribute("data-token",rule_token);
+        parent.addEventListener('touchstart', call_to_action_invoked);
+        parent.addEventListener('click', call_to_action_invoked);
+        return parent;
+    }
+
+    function create_cta_element(element_details) {
+        const element = element_details.namespace ?
+            document.createElementNS(element_details.namespace, element_details.element) :
+            document.createElement(element_details.element ?? "div");
+
+        element_details.style && Object.assign(element.style, element_details.style);
+
+        element_details.attributes &&
+            Object.entries(element_details.attributes).forEach(([key, value]) => {
+                element.setAttribute(key, value);
+            });
+
+        element_details.children &&
+            element.append(...element_details.children.map(child =>create_cta_element(child)))
+
+        element_details.text && (element.textContent = element_details.text);
+
+        return element;
+    }
+
+    // function create_cta_button(injected_div,button_details,rule_token,state){
+    //     if("name" in button_details.injected_div){injected_div.setAttribute("name", button_details.injected_div.name  )};
+    //     if("id" in button_details.injected_div){injected_div.setAttribute("id", button_details.injected_div.id  )};
+    //     if("class" in button_details.injected_div){injected_div.setAttribute("class", button_details.injected_div.class  )};
+    //     injected_div.setAttribute("state", state  );
+
+    //     injected_div.setAttribute("data-token",rule_token  );
+    //     injected_div.addEventListener('touchstart', call_to_action_invoked)
+    //     injected_div.addEventListener('click', call_to_action_invoked)
+
+    //     const styles = {
+    //         "width"     : ("width"    in button_details.injected_div_styles)? button_details.injected_div_styles.width      : undefined,
+    //         "height"    : ("height"   in button_details.injected_div_styles)? button_details.injected_div_styles.height     : undefined,
+    //         "position"  : ("position" in button_details.injected_div_styles)? button_details.injected_div_styles.position   : undefined,
+    //         "bottom"    : ("position" in button_details.injected_div_styles)? button_details.injected_div_styles.bottom     : undefined,
+    //         "right"     : ("position" in button_details.injected_div_styles)? button_details.injected_div_styles.right      : undefined,
+    //         "display"   : ("position" in button_details.injected_div_styles)? button_details.injected_div_styles.display    : undefined,
+    //         "z-index"   : "99999"
+    //      }
+
+    //      setStylesOnElement(JSON.parse(JSON.stringify(styles)),injected_div);
+    //      create_cta_elements(button_details.injected_div_inner_html,injected_div);
+    // }
+
+    // function create_cta_elements(config,parent_element){
+    //     let config_keys = Object.keys(config);
+    //     config_keys.forEach( key => {
+    //         if( key.match("^(div|ul|li|i|span)$") ){
+    //             const cur = document.createElement(key);
+    //             parent_element.appendChild(cur);
+    //             create_cta_elements(config[key],cur);
+    //         }
+    //         if( key.match("^(style|class)$") ){
+    //             parent_element.setAttribute(key, config[key]);
+    //         }
+    //     });
+    // }
+
+    function callInPageFunction(token_id,function_event_data){
+        console.log("callInPageFunction",function_event_data)
+        let function_name = function_event_data['func_name'];
+        if(function_name in trusted_functions &&
+            typeof trusted_functions[function_name] === 'function'){
+            let function_params = function_event_data['func_params'];
+            trusted_functions[function_name](function_params);
+        }else{
+            console.log("callInPageFunction, failed did not fire")
+        }
+    }
+
+    const retrieveNativeDataValue = (token_id,requested_keys)=>{
+        let requested_value = {};
+        const sonata_native_data = (typeof sonata_data_layer !== 'undefined')? sonata_data_layer: null;
+        if(sonata_native_data != null){
+            requested_keys.forEach(requested_key => {
+                if(requested_key in sonata_native_data){
+                    requested_value[requested_key] = JSON.stringify(sonata_native_data[requested_key]);
+                }
+            });
+        }
+        postMessageToBridge({"event": "async-response", "data": JSON.stringify(requested_value), "token_id": token_id });
+    }
+
+    const retrieveAllNativeDataValue = (token_id)=>{
+        const sonata_native_data = (typeof sonata_data_layer !== 'undefined')? sonata_data_layer: null;
+        postMessageToBridge({"event": "async-response", "data": JSON.stringify(sonata_native_data), "token_id": token_id });
+    }
+
+    const resizeMainFrame = (frame_details, token_id)=>{
+
+        const styles = {
+            "width"     : ("width"      in frame_details)? frame_details.width      : undefined,
+            "height"    : ("height"     in frame_details)? frame_details.height     : undefined,
+            "position"  : ("position"   in frame_details)? frame_details.position   : undefined,
+            "bottom"    : ("bottom"     in frame_details)? frame_details.bottom     : undefined,
+            "right"     : ("right"      in frame_details)? frame_details.right      : undefined,
+            "display"   : ("display"    in frame_details)? frame_details.display    : undefined,
+            "padding"   : ("padding"    in frame_details)? frame_details.padding    : undefined,
+            "border"    : ("border"     in frame_details)? frame_details.border     : undefined,
+            "overflow"  : ("overflow"   in frame_details)? frame_details.overflow   : undefined,
+            "z-index"   : "99999"
+        }
+        console.log("resizeMainFrame applying to ",sonata_main_iframe,"frame_details",frame_details,"styles",styles)
+
+        setStylesOnElement(JSON.parse(JSON.stringify(styles)),sonata_main_iframe);
+        postMessageToBridge({"event": "async-response", "data": JSON.stringify({}), "token_id": token_id });
+    }
+
+    function update_session_variables(variables){
+        postMessageToBridge({"event": "update-session-variables", "to": "target-service", "from": mesh_app_id, data:{ "variables": variables } });
+    }
+
+    sonata_chat_sdk['resizeMainFrame'] = resizeMainFrame;
+    sonata_chat_sdk['addClickButton'] = addClickButton;
+    sonata_chat_sdk['externalFunctionInvoked'] = external_function_call_invoked;
+    sonata_chat_sdk['updateSessionVariables'] = update_session_variables;
+
+    const setStylesOnElement = function(styles, element){
+        Object.keys(styles).forEach(element_style =>{
+            if(element_style in element.style){
+                element.style[element_style]=styles[element_style];
+            }
+        })
+    }
+
+    const storeDataToPage = (typeof sonata_store !== "undefined") ? sonata_store : (token_id,data,value) =>{
+        sessionStorage.setItem('sonata-session-data', data);
+        sessionStorage.setItem('sonata-session-v', value);
+    }
+
+    const getStoredDataFromPage = (typeof sonata_retrive !== "undefined") ? sonata_retrive : (token_id) =>{
+        return {
+            "session-data": sessionStorage.getItem('sonata-session-data'),
+            "session-v": sessionStorage.getItem('sonata-session-v')
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initMainFrame);
+    } else {
+        initMainFrame();
+    }
+
+})();

@@ -1,0 +1,159 @@
+window.addEventListener('load', () => {
+    console.log('Loading web-service-app-main.js');
+    const tenantParam = location.search.substring(1,47);
+    const isPreProd   = location.search.match(/pre-prod/) ? true : false;
+    const isLocalHost = (document.location.href.match(/localhost\:/)) ? true : false;
+    const url_location_params = JSON.parse('{"' + decodeURI(tenantParam).replace(/"/g, '\\"').replace(/&/g, '","').replace(/=/g,'":"') + '"}');
+    const front_end_service   = (isLocalHost)? "http://localhost:8090" : (isPreProd)? "https://us-central1-sonata-innovations-461822.cloudfunctions.net/pre-prod-sonata-messaging-frontend-web-interaction-service" :  "https://us-central1-sonata-innovations-461822.cloudfunctions.net/sonata-messaging-frontend-web-interaction-service";
+    const tenant_id_primary = ("tenant_id" in url_location_params)? url_location_params["tenant_id"] : null;
+
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+
+    const init = () =>{
+        return new Promise((resolve, reject) => {
+            retrieve_stored_data()
+            .then( session_data => announce_session_update(session_data['session-data'],session_data['session-v']))
+            .then( () => load_js_init())
+            .then(init_data => {
+                mesh_app['page_loaded_event'] = init_data['page_loaded_event'];
+                mesh_app['trusted_domains'] = init_data['trusted_domains'];
+                console.log("init_data",init_data)
+                console.log("loaded_params", mesh_app['custom-data']);
+                mesh_app['init_data'] = init_data;
+                mesh_app['api']['postMessage']("self","parent","websdk-iframe-loaded",{"page-land-event": init_data['page_loaded_event'],"session-data": init_data['session-data'],"session-v": init_data['session-v'],"session-id":init_data['session-id']});
+                resolve();
+            })
+            .catch(error =>{
+                console.log("ERROR",error)
+                reject();
+            })
+        });
+    }
+
+    const load_js_init = () => {
+        return new Promise((resolve, reject) => {
+            //(url,meathod,data,url_params,headers_add)
+
+            let params = {
+                "x-wbf-tenant-id": tenant_id_primary
+            }
+            if(mesh_app['custom-data']['session-data'] != null && mesh_app['custom-data']['session-v'] != null){
+                params['x-wbf-session']     = mesh_app['custom-data']['session-data'];
+                params['x-wbf-session-v']   = mesh_app['custom-data']['session-v'];
+            }
+
+            console.log("load_js_init: ",mesh_app['custom-data'],params);
+
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/init',undefined,undefined,undefined,params)
+            .then( main_configs =>{
+                console.log("main_configs: ",main_configs);
+                let custom_data = {"session-data": main_configs['session-data'],"session-v": main_configs['session-v'],"csh":("csh" in main_configs) ? main_configs['csh']:undefined, "session-id":main_configs['session-id'], "tenant_id": tenant_id_primary ,  "pre-prod": isPreProd, "ua": main_configs['ua'] }
+                mesh_app['api']['postMessage']("self","zone-service","custom-data",custom_data);
+                mesh_app['api']['postMessage']("self","target-service","custom-data",custom_data);
+                mesh_app['api']['postMessage']("self","ui-service","custom-data",custom_data);
+                mesh_app['api']['postMessage']("self","data-service","custom-data",custom_data);
+                mesh_app['api']['postMessage']("self","message-service","custom-data",custom_data);
+                resolve(main_configs);
+            }).catch(error => {
+                console.log("ERROR",error)
+                reject(error);
+            });
+        });
+    }
+
+    const retrieve_stored_data = () => {
+        return new Promise((resolve, reject) => {
+            console.log("getting retrieve_stored_data ")
+            mesh_app['api']['postMessage']("self","parent","retrieve-session",{},true)
+            .then(session_data =>{
+                console.log("retrieve_stored_data",session_data,JSON.stringify(session_data))
+                resolve(session_data[1])
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        });
+    }
+
+    const resizeFrame = (event_data)=>{
+        return new Promise((resolve, reject) => {
+            let frame_details = event_data['data']['frame_details'];
+            let service_id = event_data['data']['service_id'];
+            let element = document.getElementById(service_id);
+            const styles = {
+                "width"     : ("width"    in frame_details)? frame_details.width        : undefined,
+                "height"    : ("height"   in frame_details)? frame_details.height       : undefined,
+                "position"  : ("position" in frame_details)? frame_details.position     : undefined,
+                "bottom"    : ("bottom" in frame_details)? frame_details.bottom         : undefined,
+                "right"     : ("right" in frame_details)? frame_details.right           : undefined,
+                "display"   : ("display" in frame_details)? frame_details.display       : undefined,
+                "background"   : ("background" in frame_details)? frame_details.background       : undefined,
+                "box-shadow"   : ("box-shadow" in frame_details)? frame_details["box-shadow"]       : undefined,
+                "border"   : ("border" in frame_details)? frame_details.border       : undefined,
+                "padding"   : ("padding" in frame_details)? frame_details.padding       : undefined,
+                "border-radius"   : ("border-radius" in frame_details)? frame_details['border-radius']       : undefined,
+                "transition"   : ("transition" in frame_details)? frame_details.transition       : undefined,
+                "z-index"   : "99999"
+            }
+            console.log("resizeFrame applying to ",element,"frame_details",frame_details,"styles",styles)
+            setStylesOnElement(JSON.parse(JSON.stringify(styles)),element);
+            resolve();
+        });
+    }
+
+    const setStylesOnElement = function(styles, element){
+        Object.keys(styles).forEach(element_style =>{
+            if(element_style in element.style){
+                element.style[element_style]=styles[element_style];
+            }
+        })
+    }
+
+    const request_init_data = ()=>{
+        return new Promise((resolve, reject) => {
+            try{
+                resolve(mesh_app['init_data']);
+            }catch(error) {reject(error)};
+        });
+    }
+
+    const announce_session_update = (session_data,session_v,csh) =>{
+        return new Promise((resolve, reject) => {
+            console.log("announce_session_update, retrieve_stored_data",session_data,session_v,csh,isPreProd)
+            try{
+                if(session_data != null && session_v !== null){
+                    mesh_app['custom-data']['session-data'] = session_data;
+                    mesh_app['custom-data']['session-v'] = session_v;
+                    mesh_app['custom-data']['pre-prod'] = isPreProd;
+                    let custom_data = {"session-data": session_data,"session-v": session_v, "pre-prod": isPreProd}
+                    mesh_app['api']['postMessage']("self","zone-service","custom-data",custom_data);
+                    mesh_app['api']['postMessage']("self","target-service","custom-data",custom_data);
+                    mesh_app['api']['postMessage']("self","ui-service","custom-data",custom_data);
+                    mesh_app['api']['postMessage']("self","data-service","custom-data",custom_data);
+                    mesh_app['api']['postMessage']("self","web-service-app","custom-data",custom_data);
+                }else{
+                    mesh_app['custom-data']['session-data'] = null;
+                    mesh_app['custom-data']['session-v'] = null;
+                }
+                resolve();
+            }catch(error) {reject(error)};
+        });
+    }
+
+    const resolve_custom_data = (event_data)=>{
+        return new Promise((resolve, reject) => {
+            try{
+                if('session-data' in event_data['data'] && 'session-v' in event_data['data']) {
+                    mesh_app['api']['postMessage']("self","parent","custom-data",{"session-v": event_data['data']['session-v'],"session-data":event_data['data']['session-data']});
+                    resolve();
+                }
+            }catch(error) {reject(error)};
+        });
+    }
+
+    mesh_app['exports']["web-service-app-init"]     = init;
+    mesh_app['exports']["primary-service-resize"]   = resizeFrame;
+    mesh_app['exports']["request-init-data"]        = request_init_data;
+    mesh_app["exports"]["custom-data"]              = resolve_custom_data;
+})

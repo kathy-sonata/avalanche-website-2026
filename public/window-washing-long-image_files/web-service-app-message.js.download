@@ -1,0 +1,299 @@
+window.addEventListener('load', () => {
+    console.log('Loading web-service-app-message.js');
+    mesh_app = (typeof mesh_app === "undefined")? {} : mesh_app;
+    mesh_app['exports'] = (typeof mesh_app['exports'] === "undefined")? {} : mesh_app['exports'];
+    mesh_app['chat-details'] = {};
+    mesh_app['active-chat'] = false;
+    mesh_app['interval_poll'] = null;
+
+    let isPreProd = false;
+    let front_end_service   = (document.location.href.match(/localhost\:/))? "http://localhost:8090" : "https://us-central1-sonata-innovations-461822.cloudfunctions.net/sonata-messaging-frontend-web-interaction-service" 
+
+    const message_new_page_load = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            console.log("request_message_init: message_new_page_load",event_data);
+            let private_args = [];
+            /*    
+                "cw": "c70e71ad-9203-468b-947e-dc21836631ea",
+                "cv": "088fad12-63ad-4940-b7ef-e861780163bc",
+                "ac": true,
+                "rid": "600002",
+            */
+                mesh_app['init_data'] = event_data['data'];
+                console.log("request_message_init: init_data",event_data);
+                if("cw" in mesh_app["init_data"]){
+                    mesh_app['hasOpenWindow'] = true;
+                    mesh_app['currentRuleID'] = mesh_app["init_data"]['rid'];
+                    if("ac" in mesh_app["init_data"]){
+                        mesh_app['hasActiveChat'] = true;
+                        console.log("request_message_init: start_poll_service", mesh_app["init_data"]);
+                        mesh_app['chat-details'] = {};
+                        mesh_app['chat-details']['window_id'] = mesh_app["init_data"]['wid'] ;
+                        mesh_app['chat-details']['engagement_id'] = mesh_app["init_data"]['eid'];
+                        received_new_message();
+                        start_poll_service();
+                        resolve();
+                    }else{
+                        resolve();
+                    }
+                }else{
+                    resolve();
+                }
+        })
+    }
+
+    const start_new_interaction = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            const generateWindowId = (length) =>{let return_array = []; for(let i = 0; i < length; i++) { return_array.push(Math.floor(Math.random() * 10) + 1) }; return return_array.join('')};
+            const window_id = generateWindowId(10);
+            mesh_app['chat-details']['window_id'] = window_id;
+            mesh_app['api']['postMessage']("message-service","target-service","chat-init",{},false);
+
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/message/start/' + window_id + '/' + event_data['data']['agent_queue_id'],'post',null,undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( all_interation_details =>{
+                console.log('all_interation_details',all_interation_details);
+                mesh_app['chat-details']['engagement_id'] = all_interation_details['interaction_details']['engagement_id'];
+                start_poll_service();
+                if( 'session-data' in all_interation_details){
+                    announce_session_update(all_interation_details['session-data'],all_interation_details['session-v']);
+                }
+                resolve(all_interation_details)
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    const send_new_message = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            const window_id     = mesh_app['chat-details']['window_id'];
+            const engagement_id = mesh_app['chat-details']['engagement_id'];
+            console.log('send_new_message: recevied',event_data);
+            let message_data = {"message": event_data['data']['message']}
+
+            if("message_type" in event_data['data']){
+                message_data['message_type'] = event_data['data']['message_type'];
+            }
+
+            if("message_data" in event_data['data']){
+                message_data['message_data'] = event_data['data']['message_data'];
+            }
+
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/message/send/' + window_id + '/' + engagement_id,'post',message_data,undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( message_data_send =>{
+                console.log('message_data_send',message_data_send);
+                if( 'session-data' in message_data_send){
+                    announce_session_update(message_data_send['session-data'],message_data_send['session-v']);
+                }
+                resolve()
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }   
+
+    const received_new_message = () =>{
+        return new Promise((resolve, reject) => {
+            const window_id     = mesh_app['chat-details']['window_id'];
+            const engagement_id = mesh_app['chat-details']['engagement_id'];
+            const post_message_id  = ("last_message_id" in mesh_app['chat-details'])? mesh_app['chat-details']['last_message_id']: "0";
+
+            mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/message/update/' + window_id + '/' + engagement_id + '/' + post_message_id,'get',null,undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+            "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+            .then( message_updates =>{
+
+                if( 'session-data' in message_updates){
+                    announce_session_update(message_updates['session-data'],message_updates['session-v']);
+                }
+
+                let load_transcript = [];
+                let chat_closed     = false;
+
+                message_updates.forEach(chat_line => {
+                    let new_line = {
+                        "group": "system",
+                        "type": "chatLine",
+                        "message": {
+                            "messageText": chat_line["message_content"],
+                            "id": chat_line["interaction_message_id"],
+                            "timestamp":  chat_line["message_event_time"]
+                        }
+                    };
+
+                    switch(chat_line['message_owner'].toString()){
+                        case "1":
+                            new_line['group'] = "customer";
+                        break;
+                        case "3":
+                            new_line['group'] = "agent";
+                        break;
+                    }
+
+                    switch(chat_line['message_type'].toString()){
+                        case "11":
+                            new_line['type'] = "opener";
+                            new_line['group'] = "agent";
+                        break;
+                        case "13":
+                        case "14":
+                        case "15":
+                        case "16":
+                        case "17":
+                        case "18":
+                            chat_closed = true;
+                        break;
+                    }
+
+                    console.log("update received, chat_line",chat_line)
+
+                    if(chat_line['message_owner'] == 2 && chat_line['message_type'] == 2){
+                        if("message_content" in chat_line && chat_line["message_content"].match(/Agent requested interaction assignment/g)){
+                            mesh_app['api']['postMessage']("message-service","target-service","event-listen",{"event": "agent-assigned"},false);
+                        }
+                    }
+
+                    load_transcript.push(new_line);
+
+                    if("last_message_id" in mesh_app['chat-details']){
+                        if(chat_line["interaction_message_id"] > mesh_app['chat-details']['last_message_id'] ){
+                            mesh_app['chat-details']['last_message_id'] = chat_line["interaction_message_id"];
+                            if(post_message_id !== "0"){
+                                mesh_app['api']['postMessage']("message-service","ui-service","request-new-chat-line",new_line,false);
+                                if(chat_closed ){
+                                    mesh_app['api']['postMessage']("message-service","ui-service","request-end-chat-window",{},false);
+                                    if( chat_line['message_type'].toString() === "18" ||  chat_line['message_type'].toString() === "17" ){
+                                        end_interaction_services({"data": {"agent-ended": true}});
+                                    }
+                                }
+                                resolve();
+                            }
+                        }
+                    }else{
+                        mesh_app['chat-details']['last_message_id'] = chat_line["interaction_message_id"];
+                    }
+                });
+
+                if(post_message_id === "0"){
+                    mesh_app['api']['postMessage']("message-service","ui-service","request-new-transcript",{"transcript_data": load_transcript},false)
+                    if(chat_closed){
+                        mesh_app['api']['postMessage']("message-service","ui-service","request-end-chat-window",{},false);
+                    }
+                    resolve();
+                }
+                
+            })
+            .catch(error =>{
+                reject(error);
+            })
+        })
+    }
+
+    const end_interaction_services = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            console.log("end_interaction_services","ending the chat thats open",event_data,mesh_app)
+            
+            if( mesh_app['hasActiveChat']){
+                const window_id     = mesh_app['chat-details']['window_id'];
+                const engagement_id = mesh_app['chat-details']['engagement_id'];
+
+                mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/close/'+ window_id + '/' + engagement_id ,'post',{"agent-ended": event_data['data']['agent-ended']},undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],
+                "x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+                .then( (message_updates) =>{
+
+                    if( 'session-data' in message_updates){
+                        announce_session_update(message_updates['session-data'],message_updates['session-v']);
+                    }
+
+                    mesh_app['hasActiveChat'] = false;
+                    if(mesh_app["interval_poll"] != null){
+                        kill_message_poll_service();
+                    }
+                    resolve()
+                })
+                .catch(error =>{
+                    reject(error);
+                })
+            }else{
+                console.log( ("automation-ended" in  event_data['data']), event_data['data']["automation-ended"] )
+                if("automation-ended" in  event_data['data'] && event_data['data']["automation-ended"] ){
+                    mesh_app['api']['postMessage']("message-service","ui-service","request-end-chat-window",{"endType":"automation-closed"},false);
+                    mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/close','post',{"agent-ended": false, "automation-ended": true},undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],"x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+                    .then( (message_updates) =>{
+                        if( 'session-data' in message_updates){
+                            announce_session_update(message_updates['session-data'],message_updates['session-v']);
+                        }
+                        console.log("closing the chat, not enagaged");
+                        resolve()
+                    })
+                    .catch(error =>{
+                        reject(error);
+                    })
+                }else{
+                    mesh_app['api']['callAPIService'](front_end_service,'/api/web/chat/close','post',{"agent-ended": false, "automation-ended": false},undefined,{"x-wbf-tenant-id": mesh_app['custom-data']['tenant_id'],"x-wbf-session": mesh_app['custom-data']['session-data'] ,"x-wbf-session-v": mesh_app['custom-data']['session-v']})
+                    .then( (message_updates) =>{
+                        if( 'session-data' in message_updates){
+                            announce_session_update(message_updates['session-data'],message_updates['session-v']);
+                        }
+                        console.log("closing the chat, not enagaged");
+                        resolve()
+                    })
+                    .catch(error =>{
+                        reject(error);
+                    })
+                }
+            }
+        })
+    }   
+
+    function start_poll_service(){
+        mesh_app['interval_poll'] = setInterval(received_new_message, 5000);
+    }
+
+    function kill_message_poll_service(){
+        clearInterval(mesh_app["interval_poll"]);
+        mesh_app['chat-details'] = {};
+        mesh_app['active-chat'] = false;
+        mesh_app['interval_poll'] = null;
+    }
+
+    const resolve_custom_data = (event_data) =>{
+        return new Promise((resolve, reject) => {
+            mesh_app['custom-data']['tenant_id'] = ('tenant_id' in event_data['data'])?event_data['data']['tenant_id']:('tenant_id' in mesh_app['custom-data'])? mesh_app['custom-data']['tenant_id']: null;
+            mesh_app['custom-data']['session-data'] = ('session-data' in event_data['data'])?event_data['data']['session-data']:('session-data' in mesh_app['custom-data'])? mesh_app['custom-data']['session-data']: null;
+            mesh_app['custom-data']['session-v'] = ('session-v' in event_data['data'])?event_data['data']['session-v']:('session-v' in mesh_app['custom-data'])? mesh_app['custom-data']['session-v']: null;
+            mesh_app['custom-data']['session-id'] = ('session-id' in event_data['data'])?event_data['data']['session-id']:('session-id' in mesh_app['custom-data'])? mesh_app['custom-data']['session-id']: null;
+                        
+            if('pre-prod' in event_data['data'] && event_data['data']['pre-prod']){
+                isPreProd = true;
+                front_end_service = "https://us-central1-sonata-innovations-461822.cloudfunctions.net/pre-prod-sonata-messaging-frontend-web-interaction-service" ;
+            }
+            
+            resolve();
+        })  
+    }
+
+    const announce_session_update = (session_data,session_v) =>{
+        if( ('session-data' in mesh_app['custom-data'] && mesh_app['custom-data']['session-data'] !== session_data) ||
+        ('session-v' in mesh_app['custom-data'] && mesh_app['custom-data']['session-v'] !== session_v)){
+            mesh_app['custom-data']['session-data'] = session_data;
+            mesh_app['custom-data']['session-v'] = session_v;
+            let custom_data = {"session-data": session_data,"session-v": session_v }
+            mesh_app['api']['postMessage']("message-service","zone-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("message-service","target-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("message-service","ui-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("message-service","data-service","custom-data",custom_data);
+            mesh_app['api']['postMessage']("message-service","web-service-app","custom-data",custom_data);
+        }
+    }
+
+    mesh_app["exports"]["custom-data"] = resolve_custom_data;
+    mesh_app["exports"]["web-service-message-init"]                 = message_new_page_load;
+    mesh_app["exports"]["start_interaction"]    = start_new_interaction;
+    mesh_app["exports"]["send_message"]         = send_new_message;
+    mesh_app["exports"]["end_interaction"]      = end_interaction_services;
+
+})
