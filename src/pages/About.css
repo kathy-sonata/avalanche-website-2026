@@ -183,4 +183,12 @@
   .values-grid {
     grid-template-columns: 1fr;
   }
+
+  .apart-item {
+    padding: 20px;
+  }
+
+  .about-story__content h2 {
+    font-size: 1.75rem;
+  }
 }

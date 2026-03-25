@@ -1,19 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm init:*)",
-      "Bash(npm install:*)",
-      "Bash(npx vite build)",
-      "Bash(mkdir -p \"C:/kathy/avalanche-website/public/images\")",
-      "Bash(cp \"public/window-washing-long-image_files/pressure-washing-denver.jpg\" public/images/hero-bg.jpg)",
-      "Bash(cp \"public/truck-pressure-washing.webp\" public/images/truck.webp)",
-      "Bash(cp \"public/window-washing-long-image_files/residential-house-cleaning-power-washed-windows-cleaned.jpeg\" public/images/service-house.jpeg)",
-      "Bash(cp \"public/window-washing-long-image_files/MicrosoftTeams-image.jpg\" public/images/service-concrete.jpg)",
-      "Bash(cp \"public/window-washing-long-image_files/WhatsApp+Image+2024-01-19+at+09.34.43_03a109e2.jpg\" public/images/team-photo.jpg)",
-      "Bash(cp \"public/window-washing-long-image_files/Screenshot+2024-01-19+093926.png\" public/images/family-business.png)",
-      "Bash(git init:*)",
-      "Bash(gh auth:*)",
-      "Bash(git add:*)"
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "NotebookEdit",
+      "Skill"
     ]
   }
 }

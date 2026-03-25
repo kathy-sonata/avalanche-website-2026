@@ -126,4 +126,13 @@
   .footer__grid {
     grid-template-columns: 1fr;
   }
+
+  .footer {
+    padding: 40px 0 0;
+  }
+
+  .footer__social a {
+    width: 42px;
+    height: 42px;
+  }
 }

@@ -108,21 +108,25 @@
 @media (max-width: 768px) {
   .navbar__hamburger {
     display: flex;
+    z-index: 1001;
   }
 
   .navbar__nav {
     position: fixed;
-    top: var(--header-height);
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
     background: var(--color-white);
     flex-direction: column;
-    justify-content: flex-start;
-    padding-top: 40px;
-    gap: 24px;
+    justify-content: center;
+    align-items: center;
+    gap: 28px;
     transform: translateX(100%);
-    transition: transform var(--transition);
+    transition: transform 0.35s ease;
+    overflow-y: auto;
+    z-index: 1000;
+    padding: 24px;
   }
 
   .navbar__nav--open {
@@ -130,6 +134,21 @@
   }
 
   .navbar__link {
-    font-size: 1.2rem;
+    font-size: 1.35rem;
+    font-weight: 600;
+    padding: 8px 0;
+  }
+
+  .navbar__link::after {
+    bottom: 0;
+  }
+
+  .navbar__cta {
+    margin-top: 8px;
+    padding: 16px 40px;
+    font-size: 1.1rem;
+    width: 100%;
+    max-width: 280px;
+    text-align: center;
   }
 }

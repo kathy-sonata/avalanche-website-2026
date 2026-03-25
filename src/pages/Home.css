@@ -331,6 +331,16 @@
   .hero__subtitle {
     font-size: 1.1rem;
   }
+
+  .hero__buttons {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero__buttons .btn {
+    width: 100%;
+    max-width: 340px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -342,8 +352,16 @@
     grid-template-columns: 1fr;
   }
 
+  .service-card__image {
+    height: 220px;
+  }
+
   .hero__title {
     font-size: 1.85rem;
+  }
+
+  .hero__buttons .btn {
+    max-width: 100%;
   }
 
   .trust-bar__grid {

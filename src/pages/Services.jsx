@@ -6,8 +6,8 @@ const services = [
   {
     id: 'house-washing',
     title: 'House Washing',
-    tagline: 'Restore your home\'s curb appeal',
-    description: 'Our professional soft wash system gently removes years of built-up dirt, algae, mold, mildew, and pollutants from your home\'s exterior without damaging siding, paint, or surfaces.',
+    tagline: 'Your home, minus the grime',
+    description: 'Our soft wash system strips years of dirt, algae, mold, and mildew from your home\'s exterior. Low pressure means no damage to siding, paint, or trim.',
     features: [
       'Safe for vinyl, wood, stucco, brick, and fiber cement',
       'Low-pressure soft wash technique prevents surface damage',
@@ -21,8 +21,8 @@ const services = [
   {
     id: 'roof-cleaning',
     title: 'Roof Cleaning',
-    tagline: 'Protect your biggest investment',
-    description: 'Those dark streaks on your roof aren\'t just unsightly — they\'re caused by algae (Gloeocapsa magma) that feeds on your shingles. Our soft wash treatment safely eliminates them and extends your roof\'s lifespan.',
+    tagline: 'Stop algae before it eats your shingles',
+    description: 'The dark streaks on your roof are Gloeocapsa magma, an algae that feeds on shingle limestone. Our soft wash kills it at the root and adds years to your roof\'s life.',
     features: [
       'Removes black streaks, moss, lichen, and algae',
       'Low-pressure application — zero risk to your shingles',
@@ -36,8 +36,8 @@ const services = [
   {
     id: 'concrete-cleaning',
     title: 'Concrete & Driveway Cleaning',
-    tagline: 'Make your hardscapes look brand new',
-    description: 'Driveways, patios, sidewalks, and pool decks take a beating from weather, traffic, and organic growth. Our high-pressure surface cleaning system removes embedded grime, oil stains, and discoloration.',
+    tagline: 'Driveways, patios, and walkways',
+    description: 'Weather, traffic, and organic growth grind dirt into concrete. Our high-pressure surface cleaners pull out embedded grime, oil stains, and discoloration.',
     features: [
       'Uniform, streak-free cleaning with surface cleaners',
       'Removes oil stains, tire marks, and rust',
@@ -51,8 +51,8 @@ const services = [
   {
     id: 'window-cleaning',
     title: 'Window Cleaning',
-    tagline: 'Crystal-clear views, inside and out',
-    description: 'Professional window cleaning makes a dramatic difference in how your home looks and feels. We clean your windows, frames, screens, and tracks for a comprehensive, streak-free finish.',
+    tagline: 'Inside and out, streak-free',
+    description: 'We clean your windows, frames, screens, and tracks. You get a streak-free, spot-free finish on glass you forgot was that clear.',
     features: [
       'Interior and exterior window cleaning',
       'Screen removal, cleaning, and reinstallation',
@@ -66,8 +66,8 @@ const services = [
   {
     id: 'gutter-cleaning',
     title: 'Gutter Cleaning',
-    tagline: 'Prevent costly water damage',
-    description: 'Clogged gutters lead to water damage, foundation issues, ice dams, and pest infestations. Our thorough gutter cleaning service removes all debris and ensures proper drainage.',
+    tagline: 'Clear gutters, no water damage',
+    description: 'Clogged gutters cause water damage, foundation cracks, and ice dams. We remove the debris and flush the downspouts so water drains where it should.',
     features: [
       'Complete debris removal from gutters and downspouts',
       'Downspout flush to ensure proper drainage',
@@ -81,8 +81,8 @@ const services = [
   {
     id: 'commercial-cleaning',
     title: 'Commercial Pressure Washing',
-    tagline: 'Keep your business looking professional',
-    description: 'First impressions matter. Our commercial pressure washing services keep your building, parking lot, sidewalks, and drive-throughs clean and inviting for customers and employees.',
+    tagline: 'Clean buildings bring in customers',
+    description: 'We wash building facades, parking lots, sidewalks, and drive-throughs. Your customers see a clean business before they walk through the door.',
     features: [
       'Storefronts, buildings, and facade cleaning',
       'Parking lot and garage cleaning',
@@ -96,8 +96,8 @@ const services = [
   {
     id: 'deck-fence',
     title: 'Deck & Fence Cleaning',
-    tagline: 'Revitalize your outdoor living spaces',
-    description: 'Wood and composite decks, fences, and pergolas accumulate dirt, mildew, and gray weathering over time. We restore them to their natural beauty with appropriate cleaning methods.',
+    tagline: 'Bring back the wood grain',
+    description: 'Decks, fences, and pergolas go gray and collect mildew over time. We clean them with the right pressure for each material and bring back the original color.',
     features: [
       'Safe for wood, composite, and vinyl surfaces',
       'Removes gray weathering, mildew, and stains',
@@ -111,8 +111,8 @@ const services = [
   {
     id: 'fleet-equipment',
     title: 'Fleet & Equipment Washing',
-    tagline: 'Keep your fleet looking sharp',
-    description: 'Clean vehicles and equipment project professionalism and protect your investment. We offer on-site fleet washing for trucks, trailers, heavy equipment, and more.',
+    tagline: 'On-site fleet cleaning',
+    description: 'We come to your yard and wash trucks, trailers, vans, and heavy equipment. Clean rigs look better to customers and last longer.',
     features: [
       'On-site service at your location',
       'Trucks, trailers, vans, and heavy equipment',
@@ -132,8 +132,8 @@ function Services() {
       <section className="page-hero">
         <div className="container page-hero__content">
           <div className="accent-bar"></div>
-          <h1>Our Service Offerings</h1>
-          <p>Professional exterior cleaning solutions for every surface. We use the right methods and equipment for every job.</p>
+          <h1>Services</h1>
+          <p>The right method and equipment for each surface. Residential and commercial.</p>
         </div>
       </section>
 
@@ -172,7 +172,7 @@ function Services() {
           <div className="section-header">
             <div className="accent-bar"></div>
             <h2>Transparent Pricing</h2>
-            <p>Every property is unique, so we provide custom quotes based on your specific needs. Here's what influences pricing.</p>
+            <p>We quote each job individually. These factors determine your price.</p>
           </div>
           <div className="pricing-factors">
             {[
@@ -199,8 +199,8 @@ function Services() {
       {/* CTA */}
       <section className="cta-section">
         <div className="container cta-section__content">
-          <h2>Let's Get Your Property Looking Its Best</h2>
-          <p>Contact us today for a free, no-obligation consultation and custom quote.</p>
+          <h2>Get a Free Quote</h2>
+          <p>Send us photos or call for a same-day estimate.</p>
           <div className="cta-section__buttons">
             <Link to="/contact" className="btn btn-primary btn-large">Schedule a Consultation</Link>
             <a href="tel:7203362152" className="btn btn-outline btn-large">Call (720) 336-2152</a>

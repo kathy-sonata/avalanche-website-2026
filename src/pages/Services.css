@@ -169,12 +169,26 @@
   }
 }
 
+@media (max-width: 768px) {
+  .service-detail__title {
+    font-size: 1.5rem;
+  }
+}
+
 @media (max-width: 480px) {
   .service-detail {
-    padding: 24px;
+    padding: 20px;
+  }
+
+  .service-detail__image {
+    max-height: 250px;
   }
 
   .pricing-factors {
     grid-template-columns: 1fr;
+  }
+
+  .pricing-cta {
+    padding: 28px 20px;
   }
 }

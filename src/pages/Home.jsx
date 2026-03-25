@@ -14,8 +14,7 @@ function Home() {
             <span className="hero__title-accent">We Make It Simple.</span>
           </h1>
           <p className="hero__subtitle">
-            Denver's premier pressure washing and exterior cleaning company.
-            Professional results, every time.
+            Pressure washing and exterior cleaning for homes and businesses across Denver.
           </p>
           <div className="hero__buttons">
             <Link to="/contact" className="btn btn-primary btn-large">
@@ -57,30 +56,30 @@ function Home() {
         <div className="container">
           <div className="section-header">
             <div className="accent-bar"></div>
-            <h2>Our Service Offerings</h2>
-            <p>We deliver professional exterior cleaning solutions for residential and commercial properties across the Denver metro area.</p>
+            <h2>What We Do</h2>
+            <p>Exterior cleaning for homes and commercial properties in the Denver metro area.</p>
           </div>
           <div className="services-grid">
             {[
               {
                 image: '/images/service-house.jpeg',
                 title: 'House Washing',
-                desc: 'Soft wash your home\'s siding, stucco, brick, or vinyl to remove dirt, algae, mold, and mildew without damaging surfaces.'
+                desc: 'We soft wash siding, stucco, brick, and vinyl to strip away dirt, algae, mold, and mildew. No surface damage.'
               },
               {
                 image: '/images/truck.webp',
                 title: 'Roof Cleaning',
-                desc: 'Gentle soft wash treatment that safely removes black streaks, moss, and lichen while preserving your shingles\' integrity.'
+                desc: 'Low-pressure soft wash that removes black streaks, moss, and lichen without harming your shingles.'
               },
               {
                 image: '/images/service-concrete.jpg',
                 title: 'Concrete & Driveway',
-                desc: 'High-pressure surface cleaning for driveways, patios, sidewalks, and pool decks to restore them to like-new condition.'
+                desc: 'High-pressure surface cleaning for driveways, patios, sidewalks, and pool decks. We bring them back to original condition.'
               },
               {
                 image: '/images/service-windows.jpg',
                 title: 'Window Cleaning',
-                desc: 'Crystal-clear streak-free windows inside and out. We clean frames, screens, and tracks for a complete finish.'
+                desc: 'Streak-free windows inside and out. We clean frames, screens, and tracks too.'
               },
               {
                 image: '/images/service-gutter.jpeg',
@@ -90,7 +89,7 @@ function Home() {
               {
                 image: '/images/service-commercial.jpeg',
                 title: 'Commercial Cleaning',
-                desc: 'Keep your business looking professional with our commercial pressure washing for storefronts, parking lots, and more.'
+                desc: 'Storefronts, parking lots, sidewalks, and building facades. We keep your business clean.'
               }
             ].map((service, i) => (
               <div key={i} className="service-card">
@@ -115,8 +114,8 @@ function Home() {
         <div className="container">
           <div className="section-header">
             <div className="accent-bar"></div>
-            <h2>Our Results Speak for Themselves</h2>
-            <p>See the difference professional cleaning makes — real jobs, real results.</p>
+            <h2>Before and After</h2>
+            <p>Recent jobs from around Denver.</p>
           </div>
           <div className="results-grid">
             {[
@@ -141,14 +140,14 @@ function Home() {
           <div className="section-header">
             <div className="accent-bar"></div>
             <h2>How It Works</h2>
-            <p>Getting your property cleaned is simple. Here's our straightforward process.</p>
+            <p>Four steps from first call to finished job.</p>
           </div>
           <div className="steps-grid">
             {[
-              { step: '01', title: 'Free Consultation', desc: 'Reach out for a free remote or on-site consultation. We\'ll assess your property and provide a detailed quote.' },
-              { step: '02', title: 'Custom Plan', desc: 'We create a customized cleaning plan tailored to your property\'s specific needs and surfaces.' },
-              { step: '03', title: 'Expert Cleaning', desc: 'Our trained technicians arrive on schedule with professional-grade equipment to deliver exceptional results.' },
-              { step: '04', title: 'Final Walkthrough', desc: 'We do a final walkthrough with you to ensure everything meets our high standards and your complete satisfaction.' }
+              { step: '01', title: 'Free Consultation', desc: 'Call us or fill out the form. We assess your property and send a detailed quote.' },
+              { step: '02', title: 'Custom Plan', desc: 'We build a cleaning plan matched to your surfaces and property.' },
+              { step: '03', title: 'We Clean', desc: 'Our technicians show up on time with commercial-grade equipment and get to work.' },
+              { step: '04', title: 'Final Walkthrough', desc: 'We walk through the results with you before we leave. If something\'s off, we fix it.' }
             ].map((item, i) => (
               <div key={i} className="step-card">
                 <span className="step-card__number">{item.step}</span>
@@ -165,23 +164,23 @@ function Home() {
         <div className="container">
           <div className="section-header">
             <div className="accent-bar"></div>
-            <h2>What Our Customers Say</h2>
-            <p>Don't just take our word for it. See what Denver homeowners are saying.</p>
+            <h2>Customer Reviews</h2>
+            <p>From Denver homeowners who hired us.</p>
           </div>
           <div className="testimonials-grid">
             {[
               {
-                text: 'Avalanche Power Clean transformed my home! The siding looks brand new and the team was incredibly professional. I couldn\'t be happier with the results.',
+                text: 'The siding looks brand new. The crew was professional and finished in half a day. I\'ve already recommended them to two neighbors.',
                 name: 'Sarah M.',
                 location: 'Lakewood, CO'
               },
               {
-                text: 'I\'ve tried other pressure washing companies before, but none compare. They were on time, thorough, and the price was very fair. My driveway hasn\'t looked this good in years.',
+                text: 'On time, thorough, fair price. My driveway hasn\'t looked this good in years. I\'ll be calling them back for the patio next spring.',
                 name: 'James R.',
                 location: 'Aurora, CO'
               },
               {
-                text: 'The roof cleaning was amazing. I didn\'t realize how much those black streaks were affecting my home\'s curb appeal until they were gone. Highly recommend!',
+                text: 'I didn\'t realize how bad the black streaks on my roof were until they were gone. The whole house looks different now.',
                 name: 'Linda K.',
                 location: 'Arvada, CO'
               }
@@ -208,17 +207,17 @@ function Home() {
         <div className="container">
           <div className="section-header">
             <div className="accent-bar"></div>
-            <h2>Why Choose Avalanche Power Clean?</h2>
-            <p>We're not just another pressure washing company. Here's what sets us apart.</p>
+            <h2>Why Avalanche</h2>
+            <p>What you get when you hire us.</p>
           </div>
           <div className="why-grid">
             {[
-              { title: 'Licensed & Insured', desc: 'Fully licensed and insured for your peace of mind. We protect your property like it\'s our own.', icon: <img src="/images/icon-licensed.png" alt="" /> },
-              { title: 'Eco-Friendly Solutions', desc: 'We use biodegradable, environmentally safe cleaning solutions that are tough on grime but gentle on your landscape.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22c4-4 8-7.5 8-12a8 8 0 10-16 0c0 4.5 4 8 8 12z"/><path d="M12 12V6M9 9l3 3 3-3"/></svg> },
-              { title: 'Satisfaction Guaranteed', desc: 'If you\'re not 100% satisfied with our work, we\'ll come back and make it right — no questions asked.', icon: <img src="/images/icon-guarantee.png" alt="" /> },
-              { title: 'Professional Equipment', desc: 'We invest in commercial-grade equipment and stay up-to-date with the latest cleaning technology.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg> },
-              { title: 'Transparent Pricing', desc: 'No hidden fees or surprise charges. You\'ll know exactly what to expect before we start any work.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg> },
-              { title: 'Local & Trusted', desc: 'Proudly serving the Denver metro area. We\'re your neighbors and we care about our community.', icon: <img src="/images/icon-family.png" alt="" /> }
+              { title: 'Licensed & Insured', desc: 'Full liability coverage. If something goes wrong, we cover it.', icon: <img src="/images/icon-licensed.png" alt="" /> },
+              { title: 'Eco-Friendly Solutions', desc: 'Biodegradable cleaning agents that remove grime without killing your plants.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22c4-4 8-7.5 8-12a8 8 0 10-16 0c0 4.5 4 8 8 12z"/><path d="M12 12V6M9 9l3 3 3-3"/></svg> },
+              { title: 'Satisfaction Guaranteed', desc: 'Not happy with the result? We come back and redo it. No charge.', icon: <img src="/images/icon-guarantee.png" alt="" /> },
+              { title: 'Commercial-Grade Equipment', desc: 'Hot water units, surface cleaners, and soft wash rigs. The same gear the pros use.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg> },
+              { title: 'Transparent Pricing', desc: 'You see the full price before we start. No add-ons, no surprises.', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg> },
+              { title: 'Denver-Based', desc: 'We live and work in the metro area. You\'re hiring your neighbors.', icon: <img src="/images/icon-family.png" alt="" /> }
             ].map((item, i) => (
               <div key={i} className="why-card">
                 <div className="why-card__icon">
@@ -235,8 +234,8 @@ function Home() {
       {/* CTA Section */}
       <section className="cta-section">
         <div className="container cta-section__content">
-          <h2>Ready to Transform Your Property?</h2>
-          <p>Get a free, no-obligation consultation today. We'll assess your property and provide a custom quote.</p>
+          <h2>Get a Free Quote</h2>
+          <p>Tell us what you need cleaned. We'll send a quote within 24 hours.</p>
           <div className="cta-section__buttons">
             <Link to="/contact" className="btn btn-primary btn-large">
               Get My Free Consultation
